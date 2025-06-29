@@ -190,15 +190,10 @@ class PredictiveAnalyticsEngine:
         incident_df = pd.DataFrame(all_incidents).drop_duplicates(subset=['id'], keep='first')
         incident_gdf = gpd.GeoDataFrame(incident_df, geometry=[Point(loc['lon'], loc['lat']) for loc in incident_df['location']], crs="EPSG:4326")
         
-        # --- FIX STARTS HERE ---
-        # Perform the sjoin and immediately rename the correct column ('name') to 'Zone'.
-        # The helper methods are removed and logic is consolidated here.
         incidents_with_zones = gpd.sjoin(incident_gdf, _self.dm.zones_gdf, how="inner", predicate="within").rename(columns={'name': 'Zone'})
-        # --- FIX ENDS HERE ---
 
         if incidents_with_zones.empty: return kpi_df.reset_index().rename(columns={'index': 'Zone'})
 
-        # --- Base KPI Calculations (Consolidated) ---
         incident_counts = incidents_with_zones['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
         violence_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Violence']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
         accident_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Accident']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
@@ -237,7 +232,6 @@ class PredictiveAnalyticsEngine:
         kpi_df['Resource Adequacy Index'] = (available_units / (kpi_df['Expected Incident Volume'].sum() * system_strain_penalty + 1e-9)).clip(0, 1)
         kpi_df['Response Time Estimate'] = (10.0 * system_strain_penalty) * (1 + _self.model_params['response_time_penalty'] * (1-kpi_df['Resource Adequacy Index']))
         
-        # --- Advanced Analytics KPI Calculations (Consolidated) ---
         kpi_df['Ensemble Risk Score'] = _self._calculate_ensemble_risk_score(kpi_df, historical_data)
         kpi_df['Information Value Index'] = kpi_df['Ensemble Risk Score'].std()
         kpi_df['STGP_Risk'] = AdvancedAnalyticsLayer._calculate_stgp_risk(incidents_with_zones, _self.dm.zones_gdf)
@@ -253,6 +247,47 @@ class PredictiveAnalyticsEngine:
         ).clip(0, 1)
 
         return kpi_df.fillna(0).reset_index().rename(columns={'index': 'Zone'})
+
+    # --- START: NEW METHOD ADDED TO FIX THE ERROR ---
+    def generate_kpis_with_sparklines(self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> (pd.DataFrame, Dict[str, List[float]]):
+        """
+        Wrapper method that generates KPIs and also creates simulated historical trend
+        data for sparkline visualizations on the dashboard.
+        """
+        # 1. Get the current set of KPIs using the original method.
+        kpi_df = self.generate_kpis(historical_data, env_factors, current_incidents)
+
+        # 2. Generate plausible-looking historical data for the last 24 hours for sparklines.
+        # In a real system, this would query a time-series database. Here, we simulate it for demonstration.
+        sparkline_data = {}
+        
+        # Simulate 'Active Incidents' trend
+        current_incidents_count = len(current_incidents)
+        incidents_trend = np.random.randn(23) * 2 + np.sin(np.linspace(0, np.pi, 23)) * 3
+        incidents_history = np.clip(current_incidents_count + incidents_trend, 0, None).astype(int)
+        sparkline_data['active_incidents'] = np.append(incidents_history, current_incidents_count).tolist()
+
+        # Simulate 'Available Ambulances' trend
+        current_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+        ambulances_trend = np.random.randn(23)
+        ambulances_history = np.clip(current_ambulances + ambulances_trend, 0, None).astype(int)
+        sparkline_data['available_ambulances'] = np.append(ambulances_history, current_ambulances).tolist()
+        
+        # Simulate 'Highest Zone Risk' trend
+        current_max_risk = kpi_df['Integrated_Risk_Score'].max()
+        risk_trend = np.random.randn(23) * 0.05
+        risk_history = np.clip(current_max_risk + risk_trend, 0, 1)
+        sparkline_data['max_risk'] = np.append(risk_history, current_max_risk).tolist()
+        
+        # Simulate 'System Adequacy' trend
+        current_adequacy = kpi_df['Resource Adequacy Index'].mean()
+        adequacy_trend = np.random.randn(23) * 0.03
+        adequacy_history = np.clip(current_adequacy + adequacy_trend, 0, 1)
+        sparkline_data['adequacy'] = np.append(adequacy_history, current_adequacy).tolist()
+
+        # 3. Return both the KPI DataFrame and the sparkline data dictionary.
+        return kpi_df, sparkline_data
+    # --- END: NEW METHOD ---
         
     def _calculate_lyapunov_exponent(_self, historical_data: List[Dict]) -> float:
         if len(historical_data) < 2: return 0.0
@@ -291,11 +326,36 @@ class PredictiveAnalyticsEngine:
             for horizon in self.config['forecast_horizons_hours']:
                 decay = self.model_params['fallback_forecast_decay_rates'].get(str(horizon), 0.5)
                 combined_risk_score = row.get('Integrated_Risk_Score', row['Ensemble Risk Score'])
-                forecast_data.append({'Zone': row['Zone'], 'Horizon (Hours)': horizon, 'Combined Risk': combined_risk_score * decay, 'Violence Risk': row.get('Violence Clustering Score', 0) * decay, 'Accident Risk': row.get('Accident Clustering Score', 0) * decay, 'Medical Risk': row.get('Medical Surge Score', 0) * decay})
+                projected_risk = combined_risk_score * decay
+
+                # --- START: MODIFICATION TO ADD UNCERTAINTY BOUNDS ---
+                # Generate uncertainty bounds for the forecast visualization.
+                # In a real model, this would come from the model's statistical properties (e.g., ARIMA confidence intervals).
+                # Here, we simulate it as a percentage of the projected risk.
+                uncertainty = projected_risk * np.random.uniform(0.15, 0.25)
+                upper_bound = np.clip(projected_risk + uncertainty, 0, 1)
+                lower_bound = np.clip(projected_risk - uncertainty, 0, 1)
+                # --- END: MODIFICATION ---
+
+                forecast_data.append({
+                    'Zone': row['Zone'], 
+                    'Horizon (Hours)': horizon, 
+                    'Combined Risk': projected_risk,
+                    'Upper_Bound': upper_bound, # Add new column for upper bound
+                    'Lower_Bound': lower_bound, # Add new column for lower bound
+                    'Violence Risk': row.get('Violence Clustering Score', 0) * decay, 
+                    'Accident Risk': row.get('Accident Clustering Score', 0) * decay, 
+                    'Medical Risk': row.get('Medical Surge Score', 0) * decay
+                })
+        
         forecast_df = pd.DataFrame(forecast_data)
-        if forecast_df.empty: self.forecast_df = forecast_df; return self.forecast_df
-        risk_cols_to_clip = ['Violence Risk', 'Accident Risk', 'Medical Risk', 'Combined Risk']
+        if forecast_df.empty: 
+            self.forecast_df = forecast_df
+            return self.forecast_df
+        
+        risk_cols_to_clip = ['Violence Risk', 'Accident Risk', 'Medical Risk', 'Combined Risk', 'Upper_Bound', 'Lower_Bound']
         forecast_df[risk_cols_to_clip] = forecast_df[risk_cols_to_clip].clip(0, 1)
+        
         self.forecast_df = forecast_df
         return self.forecast_df
         
