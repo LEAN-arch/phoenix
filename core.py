@@ -66,34 +66,24 @@ class EnvFactors:
 class TCNN(nn.Module if TORCH_AVAILABLE else object):
     def __init__(self, input_size: int, output_size: int, channels: List[int], kernel_size: int, dropout: float):
         if not TORCH_AVAILABLE:
-            self.model = None
-            self.output_size = output_size
+            self.model = None; self.output_size = output_size
             return
-        super().__init__()
-        layers = []
-        in_channels = input_size
+        super().__init__(); layers = []; in_channels = input_size
         for out_channels in channels:
-            layers.extend([nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'), nn.ReLU(), nn.Dropout(dropout)])
-            in_channels = out_channels
+            layers.extend([nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'), nn.ReLU(), nn.Dropout(dropout)]); in_channels = out_channels
         layers.extend([nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Linear(in_channels, output_size)])
-        self.model = nn.Sequential(*layers)
-        self.output_size = output_size
+        self.model = nn.Sequential(*layers); self.output_size = output_size
 
     def forward(self, x):
-        if not TORCH_AVAILABLE or self.model is None:
-            return torch.zeros(x.shape[0], self.output_size)
+        if not TORCH_AVAILABLE or self.model is None: return torch.zeros(x.shape[0], self.output_size)
         return self.model(x)
 
 # --- L3: CORE LOGIC CLASSES ---
 class DataManager:
     """Manages all data loading, validation, and preparation."""
     def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.data_config = config['data']
-        self.zones = list(self.data_config['zones'].keys())
-        self.zones_gdf = self._build_zones_gdf()
-        self.road_graph = self._build_road_graph()
-        self.ambulances = self._initialize_ambulances()
+        self.config = config; self.data_config = config['data']; self.zones = list(self.data_config['zones'].keys())
+        self.zones_gdf = self._build_zones_gdf(); self.road_graph = self._build_road_graph(); self.ambulances = self._initialize_ambulances()
         try:
             self.laplacian_matrix = nx.normalized_laplacian_matrix(self.road_graph, nodelist=self.zones).toarray()
             logger.info("Graph Laplacian computed successfully.")
@@ -102,41 +92,32 @@ class DataManager:
             self.laplacian_matrix = np.eye(len(self.zones))
 
     def _build_road_graph(self) -> nx.Graph:
-        G = nx.Graph()
-        G.add_nodes_from(self.zones)
-        edges = self.data_config.get('road_network', {}).get('edges', [])
+        G = nx.Graph(); G.add_nodes_from(self.zones); edges = self.data_config.get('road_network', {}).get('edges', [])
         for u, v, weight in edges:
-            if u in G.nodes and v in G.nodes and isinstance(weight, (int, float)) and weight > 0:
-                G.add_edge(u, v, weight=float(weight))
+            if u in G.nodes and v in G.nodes and isinstance(weight, (int, float)) and weight > 0: G.add_edge(u, v, weight=float(weight))
         return G
 
     def _build_zones_gdf(self) -> gpd.GeoDataFrame:
         zone_data = []
         for name, data in self.data_config['zones'].items():
-            poly = Polygon([(lon, lat) for lat, lon in data['polygon']])
-            poly = poly.buffer(0) if not poly.is_valid else poly
-            if poly.is_empty:
-                raise ValueError(f"Polygon for zone '{name}' is invalid or empty.")
+            poly = Polygon([(lon, lat) for lat, lon in data['polygon']]); poly = poly.buffer(0) if not poly.is_valid else poly
+            if poly.is_empty: raise ValueError(f"Polygon for zone '{name}' is invalid or empty.")
             zone_data.append({'name': name, 'geometry': poly, **data})
-        if not zone_data:
-            raise RuntimeError("Fatal: No valid zones could be loaded from configuration.")
+        if not zone_data: raise RuntimeError("Fatal: No valid zones could be loaded from configuration.")
         return gpd.GeoDataFrame(zone_data, crs="EPSG:4326").set_index('name')
 
     def _initialize_ambulances(self) -> Dict[str, Any]:
         return { amb_id: {'id': amb_id, 'status': data.get('status', 'Disponible'), 'home_base': data.get('home_base'), 'location': Point(float(data['location'][1]), float(data['location'][0]))} for amb_id, data in self.data_config['ambulances'].items() }
 
     def get_current_incidents(self, env_factors: EnvFactors) -> List[Dict[str, Any]]:
-        api_config = self.data_config.get('real_time_api', {})
-        endpoint = api_config.get('endpoint', '')
+        api_config = self.data_config.get('real_time_api', {}); endpoint = api_config.get('endpoint', '')
         try:
             if endpoint.startswith(('http://', 'https://')):
                 headers = {"Authorization": f"Bearer {api_config.get('api_key')}"} if api_config.get('api_key') else {}
-                response = requests.get(endpoint, headers=headers, timeout=10)
-                response.raise_for_status()
+                response = requests.get(endpoint, headers=headers, timeout=10); response.raise_for_status()
                 incidents = response.json().get('incidents', [])
             else:
-                with open(endpoint, 'r', encoding='utf-8') as f:
-                    incidents = json.load(f).get('incidents', [])
+                with open(endpoint, 'r', encoding='utf-8') as f: incidents = json.load(f).get('incidents', [])
             valid_incidents = self._validate_incidents(incidents)
             return valid_incidents if valid_incidents else self._generate_synthetic_incidents(env_factors)
         except Exception as e:
@@ -148,38 +129,24 @@ class DataManager:
         for inc in incidents:
             loc = inc.get('location')
             if all(k in inc for k in ['id', 'type', 'triage']) and isinstance(loc, dict) and 'lat' in loc and 'lon' in loc:
-                try:
-                    inc['location']['lat'] = float(loc['lat'])
-                    inc['location']['lon'] = float(loc['lon'])
-                    valid_incidents.append(inc)
-                except (ValueError, TypeError):
-                    logger.warning(f"Skipping incident {inc.get('id', 'N/A')} due to invalid location data.")
+                try: inc['location']['lat'] = float(loc['lat']); inc['location']['lon'] = float(loc['lon']); valid_incidents.append(inc)
+                except (ValueError, TypeError): logger.warning(f"Skipping incident {inc.get('id', 'N/A')} due to invalid location data.")
         return valid_incidents
 
     def _generate_synthetic_incidents(self, env_factors: EnvFactors) -> List[Dict[str, Any]]:
         intensity = 5.0 * (1.5 if env_factors.is_holiday else 1.0) * (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * (2.0 if env_factors.major_event else 1.0)
-        num_incidents = int(np.random.poisson(intensity))
+        num_incidents = int(np.random.poisson(intensity));
         if num_incidents == 0: return []
-        city_boundary = self.zones_gdf.unary_union
-        bounds = city_boundary.bounds
-        incidents = []
+        city_boundary = self.zones_gdf.unary_union; bounds = city_boundary.bounds; incidents = []
         for i in range(num_incidents):
             lon, lat = np.random.uniform(bounds[0], bounds[2]), np.random.uniform(bounds[1], bounds[3])
-            if city_boundary.contains(Point(lon, lat)):
-                incidents.append({'id': f"SYN-{i}", 'type': np.random.choice(list(self.data_config['distributions']['incident_type'].keys())), 'triage': 'Red', 'location': {'lat': lat, 'lon': lon}, 'timestamp': datetime.utcnow().isoformat()})
+            if city_boundary.contains(Point(lon, lat)): incidents.append({'id': f"SYN-{i}", 'type': np.random.choice(list(self.data_config['distributions']['incident_type'].keys())), 'triage': 'Red', 'location': {'lat': lat, 'lon': lon}, 'timestamp': datetime.utcnow().isoformat()})
         logger.info(f"Generated {len(incidents)} synthetic incidents.")
         return incidents
     
     def generate_sample_history_file(self) -> io.BytesIO:
-        default_env = EnvFactors(
-            is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False,
-            population_density=50000, air_quality_index=50.0, heatwave_alert=False,
-            day_type='Weekday', time_of_day='Midday', public_event_type='None',
-            hospital_divert_status=0.0, police_activity='Normal', school_in_session=True
-        )
-        buffer = io.BytesIO()
-        buffer.write(json.dumps([{'incidents': self._generate_synthetic_incidents(default_env), 'timestamp': (datetime.utcnow() - timedelta(hours=i*24)).isoformat()} for i in range(3)], indent=2).encode('utf-8'))
-        buffer.seek(0)
+        default_env = EnvFactors(is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, population_density=50000, air_quality_index=50.0, heatwave_alert=False, day_type='Weekday', time_of_day='Midday', public_event_type='None', hospital_divert_status=0.0, police_activity='Normal', school_in_session=True)
+        buffer = io.BytesIO(); buffer.write(json.dumps([{'incidents': self._generate_synthetic_incidents(default_env), 'timestamp': (datetime.utcnow() - timedelta(hours=i*24)).isoformat()} for i in range(3)], indent=2).encode('utf-8')); buffer.seek(0)
         return buffer
 
 class PredictiveAnalyticsEngine:
@@ -208,8 +175,8 @@ class PredictiveAnalyticsEngine:
     def generate_kpis(_self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> pd.DataFrame:
         kpi_cols = [
             'Incident Probability', 'Expected Incident Volume', 'Risk Entropy', 'Anomaly Score', 
-            'Spatial Spillover Risk', 'Resource Adequacy Index', 'Chaos Sensitivity Score', 
-            'Bayesian Confidence Score', 'Information Value Index', 'Ensemble Risk Score',
+            'Spatial Spillover Risk', 'Resource Adequacy Index', 'Ensemble Risk Score',
+            'Chaos Sensitivity Score', 'Bayesian Confidence Score', 'Information Value Index', 
             'STGP_Risk', 'HMM_State_Risk', 'GNN_Structural_Risk', 'Game_Theory_Tension',
             'Integrated_Risk_Score'
         ]
@@ -220,77 +187,51 @@ class PredictiveAnalyticsEngine:
 
         incident_df = pd.DataFrame(all_incidents).drop_duplicates(subset=['id'], keep='first')
         incident_gdf = gpd.GeoDataFrame(incident_df, geometry=[Point(loc['lon'], loc['lat']) for loc in incident_df['location']], crs="EPSG:4326")
-        
-        incidents_with_zones_raw = gpd.sjoin(incident_gdf, _self.dm.zones_gdf, how="inner", predicate="within")
-        
-        # --- FIX STARTS HERE ---
-        # The column created by sjoin is 'name' because zones_gdf index is named 'name'.
-        # Rename this correct column to 'Zone'.
-        incidents_with_zones = incidents_with_zones_raw.rename(columns={'name': 'Zone'})
-        # --- FIX ENDS HERE ---
-
+        incidents_with_zones = gpd.sjoin(incident_gdf, _self.dm.zones_gdf, how="inner", predicate="within").rename(columns={'index_right': 'Zone'})
         if incidents_with_zones.empty: return kpi_df.reset_index().rename(columns={'index': 'Zone'})
 
-        # This call will now succeed because the 'Zone' column exists.
-        incident_counts = incidents_with_zones['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
+        _self._calculate_base_kpis(kpi_df, incidents_with_zones, historical_data, env_factors)
+        _self._calculate_advanced_kpis(kpi_df, incidents_with_zones)
         
-        # The rest of the original file's logic remains exactly the same...
-        violence_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Violence']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
-        accident_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Accident']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
-        medical_counts = incidents_with_zones[incidents_with_zones['type'].isin(['Medical-Chronic', 'Medical-Acute'])]['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
+        return kpi_df.fillna(0).reset_index().rename(columns={'index': 'Zone'})
         
-        day_time_multiplier = {'Weekday': 1.0, 'Friday': 1.2, 'Weekend': 1.3}.get(env_factors.day_type, 1.0)
-        day_time_multiplier *= {'Morning Rush': 1.1, 'Midday': 0.9, 'Evening Rush': 1.2, 'Night': 1.4}.get(env_factors.time_of_day, 1.0)
-        event_multiplier = 1.0; violence_event_mod = 1.0; medical_event_mod = 1.0
-        if env_factors.public_event_type != 'None':
-            event_multiplier = {'Sporting Event': 1.6, 'Concert/Festival': 1.8, 'Public Protest': 2.0}.get(env_factors.public_event_type, 1.0)
-            violence_event_mod = {'Sporting Event': 1.8, 'Public Protest': 2.5}.get(env_factors.public_event_type, 1.0)
-            medical_event_mod = {'Concert/Festival': 2.0}.get(env_factors.public_event_type, 1.0)
-        effective_traffic = env_factors.traffic_level * (1.0 if env_factors.school_in_session else 0.8)
-        police_activity_mod = {'Low': 1.1, 'Normal': 1.0, 'High': 0.85}.get(env_factors.police_activity, 1.0)
-        system_strain_penalty = 1.0 + (env_factors.hospital_divert_status * 2.0)
+    def _calculate_base_kpis(self, kpi_df: pd.DataFrame, incidents: gpd.GeoDataFrame, history: List[Dict], env: EnvFactors):
+        incident_counts = incidents['Zone'].value_counts().reindex(self.dm.zones, fill_value=0)
+        day_time_multiplier = {'Weekday': 1.0, 'Friday': 1.2, 'Weekend': 1.3}.get(env.day_type, 1.0) * {'Morning Rush': 1.1, 'Midday': 0.9, 'Evening Rush': 1.2, 'Night': 1.4}.get(env.time_of_day, 1.0)
+        event_multiplier = {'Sporting Event': 1.6, 'Concert/Festival': 1.8, 'Public Protest': 2.0}.get(env.public_event_type, 1.0) if env.public_event_type != 'None' else 1.0
+        effective_traffic = env.traffic_level * (1.0 if env.school_in_session else 0.8)
+        system_strain_penalty = 1.0 + (env.hospital_divert_status * 2.0)
         
-        if _self.bn_model:
+        if self.bn_model:
             try:
-                evidence = {'Holiday':1 if env_factors.is_holiday else 0, 'Weather':1 if env_factors.weather!='Clear' else 0, 'MajorEvent':1 if env_factors.major_event else 0, 'AirQuality':1 if env_factors.air_quality_index>100 else 0, 'Heatwave':1 if env_factors.heatwave_alert else 0}
-                result = _self.bn_model.get_inference_engine().query(variables=['IncidentRate'], evidence=evidence, show_progress=False); rate_probs = result.values
+                evidence = {'Holiday':1 if env.is_holiday else 0, 'Weather':1 if env.weather!='Clear' else 0, 'MajorEvent':1 if env.major_event else 0, 'AirQuality':1 if env.air_quality_index>100 else 0, 'Heatwave':1 if env.heatwave_alert else 0}
+                result = self.bn_model.get_inference_engine().query(variables=['IncidentRate'], evidence=evidence, show_progress=False); rate_probs = result.values
                 baseline_rate = np.sum(rate_probs * np.array([1, 5, 10]))
                 kpi_df['Bayesian Confidence Score'] = 1 - (np.std(rate_probs) / (np.mean(rate_probs) + 1e-9))
-            except Exception as e:
-                logger.warning(f"Bayesian inference failed: {e}. Using defaults."); baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
-        else:
-            baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
+            except Exception: baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
+        else: baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
         
         baseline_rate *= day_time_multiplier * event_multiplier
         current_dist = incident_counts / (incident_counts.sum() + 1e-9)
-        prior_dist = pd.Series(_self.config['data']['distributions']['zone']).reindex(_self.dm.zones, fill_value=1e-9)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            kl_divergence = np.nansum(current_dist * np.log(current_dist / prior_dist))
-            shannon_entropy = -np.nansum(current_dist * np.log2(current_dist))
-        kpi_df['Anomaly Score'] = kl_divergence
-        kpi_df['Risk Entropy'] = shannon_entropy
-        kpi_df['Chaos Sensitivity Score'] = _self._calculate_lyapunov_exponent(historical_data)
-        base_probs = (baseline_rate * prior_dist * _self.dm.zones_gdf['crime_rate_modifier']).clip(0, 1)
-        kpi_df['Spatial Spillover Risk'] = _self.model_params['laplacian_diffusion_factor'] * (_self.dm.laplacian_matrix @ base_probs.values)
-
-        hawkes_params = _self.model_params['hawkes_process']; sir_params = _self.model_params['sir_model']
-        kpi_df['Violence Clustering Score'] = (violence_counts * hawkes_params['kappa'] * hawkes_params['violence_weight'] * violence_event_mod * police_activity_mod).clip(0, 1)
-        kpi_df['Accident Clustering Score'] = (accident_counts * hawkes_params['kappa'] * hawkes_params['trauma_weight'] * effective_traffic).clip(0, 1)
-        kpi_df['Medical Surge Score'] = (_self.dm.zones_gdf['population'].apply(lambda s: sir_params['beta']*medical_counts.get(s,0)/(s+1e-9)-sir_params['gamma'])*medical_event_mod).clip(0,1)
-        kpi_df['Trauma Clustering Score'] = (kpi_df['Violence Clustering Score'] + kpi_df['Accident Clustering Score']) / 2
-        kpi_df['Disease Surge Score'] = kpi_df['Medical Surge Score']
+        prior_dist = pd.Series(self.config['data']['distributions']['zone']).reindex(self.dm.zones, fill_value=1e-9)
+        kpi_df['Anomaly Score'] = np.nansum(current_dist * np.log(current_dist / prior_dist))
+        kpi_df['Risk Entropy'] = -np.nansum(current_dist * np.log2(current_dist))
+        kpi_df['Chaos Sensitivity Score'] = np.log(pd.Series([len(h.get('incidents',[])) for h in history]).diff().abs().mean()+1) if len(history)>1 else 0
+        base_probs = (baseline_rate * prior_dist * self.dm.zones_gdf['crime_rate_modifier']).clip(0, 1)
+        kpi_df['Spatial Spillover Risk'] = self.model_params['laplacian_diffusion_factor'] * (self.dm.laplacian_matrix @ base_probs.values)
         kpi_df['Incident Probability'] = base_probs
         kpi_df['Expected Incident Volume'] = (base_probs * 10 * effective_traffic).round()
-        available_units = sum(1 for a in _self.dm.ambulances.values() if a['status']=='Disponible')
+        available_units = sum(1 for a in self.dm.ambulances.values() if a['status']=='Disponible')
         kpi_df['Resource Adequacy Index'] = (available_units / (kpi_df['Expected Incident Volume'].sum() * system_strain_penalty + 1e-9)).clip(0, 1)
-        kpi_df['Response Time Estimate'] = (10.0 * system_strain_penalty) * (1 + _self.model_params['response_time_penalty'] * (1-kpi_df['Resource Adequacy Index']))
-        kpi_df['Ensemble Risk Score'] = _self.calculate_ensemble_risk_score(kpi_df, historical_data)
-        kpi_df['Information Value Index'] = kpi_df['Ensemble Risk Score'].std()
 
-        advanced_kpis = _self._calculate_advanced_kpis(kpi_df, incidents_with_zones)
-        for key, value in advanced_kpis.items(): kpi_df[key] = value
-        
-        adv_weights = _self.model_params.get('advanced_model_weights', {})
+    def _calculate_advanced_kpis(self, kpi_df: pd.DataFrame, incidents_with_zones: gpd.GeoDataFrame):
+        kpi_df['Ensemble Risk Score'] = self._calculate_ensemble_risk_score(kpi_df, incidents_with_zones)
+        kpi_df['Information Value Index'] = kpi_df['Ensemble Risk Score'].std()
+        kpi_df['STGP_Risk'] = AdvancedAnalyticsLayer._calculate_stgp_risk(incidents_with_zones, self.dm.zones_gdf)
+        kpi_df['HMM_State_Risk'] = AdvancedAnalyticsLayer._calculate_hmm_risk(kpi_df)
+        kpi_df['GNN_Structural_Risk'] = self.gnn_structural_risk
+        kpi_df['Game_Theory_Tension'] = AdvancedAnalyticsLayer._calculate_game_theory_tension(kpi_df)
+        adv_weights = self.model_params.get('advanced_model_weights', {})
         kpi_df['Integrated_Risk_Score'] = (
             adv_weights.get('base_ensemble', 0.6) * kpi_df['Ensemble Risk Score'] +
             adv_weights.get('stgp', 0.1) * kpi_df['STGP_Risk'] +
@@ -299,63 +240,51 @@ class PredictiveAnalyticsEngine:
             adv_weights.get('game_theory', 0.1) * kpi_df['Game_Theory_Tension']
         ).clip(0, 1)
 
-        return kpi_df.fillna(0).reset_index().rename(columns={'index': 'Zone'})
-        
-    def _calculate_lyapunov_exponent(_self, historical_data: List[Dict]) -> float:
-        if len(historical_data) < 2: return 0.0
-        try:
-            series = pd.Series([len(h.get('incidents', [])) for h in historical_data])
-            if len(series) < 10 or series.std() == 0: return 0.0
-            return np.log(series.diff().abs().mean() + 1)
-        except Exception: return 0.0
-
-    def calculate_ensemble_risk_score(_self, kpi_df: pd.DataFrame, historical_data: List[Dict]) -> pd.Series:
-        if kpi_df.empty or not _self.method_weights: return pd.Series(0.0, index=kpi_df.index)
-        normalized_scores_df = pd.DataFrame(index=kpi_df.index)
+    def _calculate_ensemble_risk_score(self, kpi_df: pd.DataFrame, incidents_with_zones: gpd.GeoDataFrame) -> pd.Series:
+        if kpi_df.empty or not self.method_weights: return pd.Series(0.0, index=kpi_df.index)
+        # This helper function needs to be defined within the method that uses it
         def normalize(series: pd.Series) -> pd.Series:
             min_val, max_val = series.min(), series.max()
-            if max_val > min_val: return (series - min_val) / (max_val - min_val)
-            return pd.Series(0.0, index=series.index)
-        chaos_amp = _self.model_params.get('chaos_amplifier', 1.5) if historical_data and np.var([len(h.get('incidents',[])) for h in historical_data]) > np.mean([len(h.get('incidents',[])) for h in historical_data]) else 1.0
-        component_map = { 'hawkes': 'Trauma Clustering Score', 'sir': 'Disease Surge Score', 'bayesian': 'Bayesian Confidence Score', 'graph': 'Spatial Spillover Risk', 'chaos': 'Chaos Sensitivity Score', 'info': 'Risk Entropy', 'game': 'Resource Adequacy Index', 'violence': 'Violence Clustering Score', 'accident': 'Accident Clustering Score', 'medical': 'Medical Surge Score'}
-        for weight_key, metric in component_map.items():
-            if metric in kpi_df.columns and _self.method_weights.get(weight_key, 0) > 0:
-                col = kpi_df[metric].copy()
-                if metric == 'Resource Adequacy Index': col = 1 - col
-                if metric == 'Chaos Sensitivity Score': col *= chaos_amp
-                normalized_scores_df[weight_key] = normalize(col)
-        if _self.method_weights.get('tcnn', 0) > 0 and not _self.forecast_df.empty:
-            tcnn_risk = _self.forecast_df[_self.forecast_df['Horizon (Hours)'] == 3].set_index('Zone')[['Violence Risk', 'Accident Risk', 'Medical Risk']].mean(axis=1)
-            normalized_scores_df['tcnn'] = normalize(tcnn_risk.reindex(_self.dm.zones, fill_value=0))
-        weights = pd.Series(_self.method_weights)
-        aligned_scores, aligned_weights = normalized_scores_df.align(weights, axis=1, fill_value=0)
-        return aligned_scores.dot(aligned_weights).clip(0, 1)
+            return (series - min_val) / (max_val - min_val + 1e-9) if max_val > min_val else pd.Series(0.0, index=series.index)
+        
+        normalized_scores_df = pd.DataFrame(index=kpi_df.index)
+        temp_kpi_df = kpi_df.copy() # Use a temporary copy to add derived scores
+        temp_kpi_df['Trauma Clustering Score'] = (temp_kpi_df['Violence Clustering Score'] + temp_kpi_df['Accident Clustering Score']) / 2 if 'Violence Clustering Score' in temp_kpi_df else 0
 
-    def _calculate_advanced_kpis(self, kpi_df: pd.DataFrame, incidents_with_zones: gpd.GeoDataFrame) -> Dict[str, pd.Series]:
-        """Orchestrator for calculating KPIs from advanced models."""
-        return {
-            "STGP_Risk": AdvancedAnalyticsLayer._calculate_stgp_risk(incidents_with_zones, self.dm.zones_gdf),
-            "HMM_State_Risk": AdvancedAnalyticsLayer._calculate_hmm_risk(kpi_df),
-            "GNN_Structural_Risk": self.gnn_structural_risk,
-            "Game_Theory_Tension": AdvancedAnalyticsLayer._calculate_game_theory_tension(kpi_df)
-        }
+        component_map = { 'hawkes': 'Trauma Clustering Score', 'sir': 'Medical Surge Score', 'bayesian': 'Bayesian Confidence Score', 'graph': 'Spatial Spillover Risk', 'chaos': 'Chaos Sensitivity Score', 'info': 'Risk Entropy', 'game': 'Resource Adequacy Index'}
+        for weight_key, metric in component_map.items():
+            if metric in temp_kpi_df.columns and self.method_weights.get(weight_key, 0) > 0:
+                col = temp_kpi_df[metric].copy()
+                if metric == 'Resource Adequacy Index': col = 1 - col
+                normalized_scores_df[weight_key] = normalize(col)
+        
+        weights = pd.Series(self.method_weights); aligned_scores, aligned_weights = normalized_scores_df.align(weights, axis=1, fill_value=0)
+        return aligned_scores.dot(aligned_weights).clip(0, 1)
 
     def generate_forecast(self, kpi_df: pd.DataFrame) -> pd.DataFrame:
         if kpi_df.empty: return pd.DataFrame()
-        forecast_data = []
+        forecast_data = []; decay_rates = self.model_params['fallback_forecast_decay_rates']
         for _, row in kpi_df.iterrows():
             for horizon in self.config['forecast_horizons_hours']:
-                decay = self.model_params['fallback_forecast_decay_rates'].get(str(horizon), 0.5)
-                combined_risk_score = row.get('Integrated_Risk_Score', row['Ensemble Risk Score'])
-                forecast_data.append({'Zone': row['Zone'], 'Horizon (Hours)': horizon, 'Violence Risk': row.get('Violence Clustering Score', 0) * decay, 'Accident Risk': row.get('Accident Clustering Score', 0) * decay, 'Medical Risk': row.get('Medical Surge Score', 0) * decay, 'Combined Risk': combined_risk_score * decay})
-        self.forecast_df = pd.DataFrame(forecast_data).clip(0, 1)
+                decay = decay_rates.get(str(horizon), 0.5)
+                forecast_data.append({ 'Zone': row['Zone'], 'Horizon (Hours)': horizon, 'Combined Risk': row['Integrated_Risk_Score'] * decay })
+        
+        # --- FIX STARTS HERE ---
+        forecast_df = pd.DataFrame(forecast_data)
+        if forecast_df.empty:
+            self.forecast_df = forecast_df
+            return self.forecast_df
+        # Only clip the numeric 'Combined Risk' column
+        forecast_df['Combined Risk'] = forecast_df['Combined Risk'].clip(0, 1)
+        self.forecast_df = forecast_df
         return self.forecast_df
+        # --- FIX ENDS HERE ---
         
     def generate_allocation_recommendations(self, kpi_df: pd.DataFrame) -> Dict[str, int]:
         if kpi_df.empty: return {zone: 0 for zone in self.dm.zones}
         available_units = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
         if available_units == 0: return {zone: 0 for zone in self.dm.zones}
-        risk_scores = kpi_df.set_index('Zone').get('Integrated_Risk_Score', kpi_df.set_index('Zone')['Ensemble Risk Score'])
+        risk_scores = kpi_df.set_index('Zone')['Integrated_Risk_Score']
         total_risk = risk_scores.sum()
         if total_risk == 0:
             allocations = {zone: available_units // len(self.dm.zones) for zone in self.dm.zones}
