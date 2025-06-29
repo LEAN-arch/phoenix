@@ -16,6 +16,10 @@ import hashlib
 import streamlit as st
 import io
 
+# --- START: NEW IMPORTS FOR OPERATIONS RESEARCH ---
+from scipy.optimize import milp, minimize, Bounds, LinearConstraint
+# --- END: NEW IMPORTS ---
+
 # Local imports
 from models import AdvancedAnalyticsLayer
 
@@ -137,7 +141,6 @@ class DataManager:
         intensity = 5.0 * (1.5 if env_factors.is_holiday else 1.0) * (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * (2.0 if env_factors.major_event else 1.0)
         num_incidents = int(np.random.poisson(intensity));
         if num_incidents == 0: return []
-        # DeprecationWarning Fix
         city_boundary = self.zones_gdf.union_all()
         bounds = city_boundary.bounds; incidents = []
         for i in range(num_incidents):
@@ -211,7 +214,6 @@ class PredictiveAnalyticsEngine:
         
         if _self.bn_model:
             try:
-                # pgmpy API Fix
                 inference = VariableElimination(_self.bn_model)
                 evidence = {'Holiday':1 if env_factors.is_holiday else 0, 'Weather':1 if env_factors.weather!='Clear' else 0, 'MajorEvent':1 if env_factors.major_event else 0, 'AirQuality':1 if env_factors.air_quality_index>100 else 0, 'Heatwave':1 if env_factors.heatwave_alert else 0}
                 result = inference.query(variables=['IncidentRate'], evidence=evidence, show_progress=False)
@@ -334,18 +336,110 @@ class PredictiveAnalyticsEngine:
         self.forecast_df = forecast_df
         return self.forecast_df
         
-    def generate_allocation_recommendations(self, kpi_df: pd.DataFrame) -> Dict[str, int]:
-        if kpi_df.empty: return {zone: 0 for zone in self.dm.zones}
-        available_units = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-        if available_units == 0: return {zone: 0 for zone in self.dm.zones}
-        risk_scores = kpi_df.set_index('Zone').get('Integrated_Risk_Score', kpi_df.set_index('Zone')['Ensemble Risk Score'])
+    def _post_process_allocations(self, allocations: Dict[str, Any], available_units: int, zones: List[str], sort_key: pd.Series) -> Dict[str, int]:
+        """Ensures the final integer sum of allocations equals available_units after rounding."""
+        final_allocations = {zone: int(round(val)) for zone, val in allocations.items()}
+        
+        allocated_units = sum(final_allocations.values())
+        diff = available_units - allocated_units
+        
+        if diff != 0:
+            priority_order = sort_key.sort_values(ascending=False).index.tolist()
+            
+            if diff > 0:
+                for i in range(diff):
+                    zone_to_add = priority_order[i % len(priority_order)]
+                    final_allocations[zone_to_add] += 1
+            else:
+                for i in range(abs(diff)):
+                    zone_to_remove = priority_order[-(i + 1)]
+                    if final_allocations[zone_to_remove] > 0:
+                         final_allocations[zone_to_remove] -= 1
+
+        return final_allocations
+
+    def _allocate_proportional(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
+        """Basic proportional allocation based on risk scores."""
+        logger.info("Using Proportional Allocation strategy.")
+        risk_scores = kpi_df.set_index('Zone')['Integrated_Risk_Score']
         total_risk = risk_scores.sum()
+        
         if total_risk == 0:
             allocations = {zone: available_units // len(self.dm.zones) for zone in self.dm.zones}
-            allocations[self.dm.zones[0]] += available_units % len(self.dm.zones); return allocations
-        allocations = (available_units * risk_scores / total_risk).round().astype(int).to_dict()
-        allocated_units = sum(allocations.values()); diff = available_units - allocated_units
-        if diff != 0:
-            risk_order = risk_scores.sort_values(ascending=(diff < 0)).index
-            for i in range(abs(diff)): allocations[risk_order[i % len(risk_order)]] += np.sign(diff)
-        return allocations
+            allocations[self.dm.zones[0]] += available_units % len(self.dm.zones)
+            return allocations
+            
+        allocations = (available_units * risk_scores / total_risk).to_dict()
+        return self._post_process_allocations(allocations, available_units, kpi_df['Zone'].tolist(), risk_scores)
+
+    def _allocate_milp(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
+        """Optimizes allocation using Mixed-Integer Linear Programming to maximize risk coverage."""
+        logger.info("Using MILP (Linear Optimization) strategy.")
+        zones = kpi_df['Zone'].tolist()
+        risk_scores = kpi_df['Integrated_Risk_Score'].values
+        
+        c = -risk_scores
+        integrality = np.ones_like(c)
+        bounds = (0, available_units)
+        constraints = LinearConstraint(np.ones((1, len(zones))), lb=available_units, ub=available_units)
+        
+        res = milp(c=c, constraints=constraints, integrality=integrality, bounds=bounds)
+
+        if res.success:
+            return dict(zip(zones, res.x.astype(int)))
+        else:
+            logger.warning("MILP optimization failed. Falling back to proportional allocation.")
+            return self._allocate_proportional(kpi_df, available_units)
+
+    def _allocate_nlp(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
+        """Optimizes allocation using Non-Linear Programming for more realistic modeling."""
+        logger.info("Using NLP (Non-Linear Optimization) strategy.")
+        zones = kpi_df['Zone'].tolist()
+        risk_scores = kpi_df['Integrated_Risk_Score'].values
+        expected_incidents = kpi_df['Expected Incident Volume'].values
+
+        def objective_function(allocations):
+            w_risk = self.model_params.get('nlp_weight_risk', 1.0)
+            w_congestion = self.model_params.get('nlp_weight_congestion', 0.2)
+            
+            risk_reduction_utility = np.sum(risk_scores * np.log(1 + allocations + 1e-9))
+            congestion_penalty = np.sum(np.square(expected_incidents / (1 + allocations)))
+            
+            return -w_risk * risk_reduction_utility + w_congestion * congestion_penalty
+
+        constraints = LinearConstraint(np.ones(len(zones)), lb=available_units, ub=available_units)
+        bounds = Bounds(lb=0, ub=available_units)
+        initial_guess = (available_units * risk_scores / (risk_scores.sum() + 1e-9)).clip(0)
+        
+        res = minimize(
+            fun=objective_function, x0=initial_guess, method='SLSQP',
+            bounds=bounds, constraints=[constraints]
+        )
+
+        if res.success:
+            allocations_float = pd.Series(res.x, index=zones)
+            return self._post_process_allocations(allocations_float.to_dict(), available_units, zones, allocations_float)
+        else:
+            logger.warning("NLP optimization failed. Falling back to proportional allocation.")
+            return self._allocate_proportional(kpi_df, available_units)
+
+    def generate_allocation_recommendations(self, kpi_df: pd.DataFrame) -> Dict[str, int]:
+        """
+        Generates ambulance allocation recommendations using a configurable strategy.
+        This method acts as a dispatcher to the underlying OR models.
+        """
+        if kpi_df.empty or kpi_df['Integrated_Risk_Score'].sum() == 0:
+            return {zone: 0 for zone in self.dm.zones}
+        
+        available_units = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+        if available_units == 0:
+            return {zone: 0 for zone in self.dm.zones}
+
+        strategy = self.model_params.get('allocation_strategy', 'proportional')
+        
+        if strategy == 'nlp':
+            return self._allocate_nlp(kpi_df, available_units)
+        elif strategy == 'milp':
+            return self._allocate_milp(kpi_df, available_units)
+        else:
+            return self._allocate_proportional(kpi_df, available_units)
