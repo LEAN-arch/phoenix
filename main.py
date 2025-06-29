@@ -15,6 +15,9 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
+# --- Geospatial libraries for isochrones ---
+from shapely.geometry import Point
+
 # Import from our refactored modules
 from core import DataManager, PredictiveAnalyticsEngine, EnvFactors
 from utils import load_config, ReportGenerator
@@ -43,20 +46,12 @@ class Dashboard:
             
         if 'env_factors' not in st.session_state:
             avg_pop_density = self.dm.zones_gdf['population'].mean() if not self.dm.zones_gdf.empty else 50000
-            st.session_state['env_factors'] = EnvFactors(
-                is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, 
-                population_density=avg_pop_density, air_quality_index=50.0, heatwave_alert=False,
-                day_type='Weekday', time_of_day='Midday', public_event_type='None',
-                hospital_divert_status=0.0, police_activity='Normal', school_in_session=True
-            )
+            st.session_state['env_factors'] = EnvFactors(is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, population_density=avg_pop_density, air_quality_index=50.0, heatwave_alert=False, day_type='Weekday', time_of_day='Midday', public_event_type='None', hospital_divert_status=0.0, police_activity='Normal', school_in_session=True)
 
     def render(self):
-        """Main rendering loop for the Streamlit application."""
         st.title("RedShield AI: Phoenix v4.0")
         st.markdown("##### Proactive Emergency Response & Resource Allocation Platform")
-
         self._render_sidebar()
-
         env_factors = st.session_state['env_factors']
         historical_data = st.session_state['historical_data']
 
@@ -64,115 +59,207 @@ class Dashboard:
             current_incidents = self.dm.get_current_incidents(env_factors)
             kpi_df, sparkline_data = self.engine.generate_kpis_with_sparklines(historical_data, env_factors, current_incidents)
             forecast_df = self.engine.generate_forecast(kpi_df)
-            
-            # Call the main configured allocation method
             allocations = self.engine.generate_allocation_recommendations(kpi_df)
-            # Call a new helper method to get the comparison data
-            allocation_comparison_df = self._get_allocation_comparison_data(kpi_df)
+            
+        st.session_state.update({
+            'kpi_df': kpi_df, 'forecast_df': forecast_df, 'allocations': allocations,
+            'sparkline_data': sparkline_data
+        })
 
-        st.session_state['kpi_df'] = kpi_df
-        st.session_state['forecast_df'] = forecast_df
-        st.session_state['allocations'] = allocations
-        st.session_state['allocation_comparison_df'] = allocation_comparison_df # Store in session state
-        st.session_state['sparkline_data'] = sparkline_data
-
-        tab1, tab2, tab3 = st.tabs(["🔥 Operational Dashboard", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
+        tab1, tab2, tab3 = st.tabs(["🔥 Operational Command", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
 
         with tab1:
-            self._render_main_dashboard_tab(kpi_df, allocations, current_incidents)
+            self._render_operational_command_tab(kpi_df, allocations, current_incidents)
         with tab2:
             self._render_kpi_deep_dive_tab(kpi_df, forecast_df)
         with tab3:
             self._render_methodology_tab()
 
-    def _get_allocation_comparison_data(self, kpi_df: pd.DataFrame) -> pd.DataFrame:
-        """Runs all three allocation models to generate data for a comparison chart."""
-        available_units = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-        if available_units == 0 or kpi_df.empty:
-            return pd.DataFrame()
-            
-        proportional_alloc = self.engine._allocate_proportional(kpi_df, available_units)
-        milp_alloc = self.engine._allocate_milp(kpi_df, available_units)
-        nlp_alloc = self.engine._allocate_nlp(kpi_df, available_units)
+    def _plot_kpi_health_gauge(self, data, normal_range, title, color_map, unit=""):
+        fig = go.Figure()
         
-        # Combine results into a single DataFrame
-        df = pd.DataFrame({
-            'Proportional': proportional_alloc,
-            'Linear Optimal (MILP)': milp_alloc,
-            'Non-Linear Optimal (NLP)': nlp_alloc
-        }).reset_index().rename(columns={'index': 'Zone'})
+        fig.add_trace(go.Scatter(
+            x=list(range(len(data))),
+            y=[normal_range[1]] * len(data),
+            mode='lines', line=dict(color='rgba(0,0,0,0)'),
+            showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=list(range(len(data))),
+            y=[normal_range[0]] * len(data),
+            mode='lines', line=dict(color='rgba(0,0,0,0)'),
+            fill='tonexty', fillcolor='rgba(180, 180, 180, 0.2)',
+            name='Normal Range', showlegend=False
+        ))
         
-        return df.melt(id_vars='Zone', var_name='Strategy', value_name='Recommended Units')
+        current_val = data[-1]
+        if current_val > normal_range[1]:
+            line_color = color_map['high']
+        elif current_val < normal_range[0]:
+            line_color = color_map['low']
+        else:
+            line_color = color_map['normal']
 
-    def _render_main_dashboard_tab(self, kpi_df, allocations, incidents):
-        st.subheader("System Health & Live Operations")
+        fig.add_trace(go.Scatter(
+            x=list(range(len(data))), y=data,
+            mode='lines', name='Current Trend',
+            line=dict(color=line_color, width=3)
+        ))
+
+        fig.update_layout(
+            height=80, margin=dict(l=5, r=5, t=5, b=5),
+            xaxis=dict(visible=False), 
+            yaxis=dict(visible=False, range=[min(min(data), normal_range[0])*0.9, max(max(data), normal_range[1])*1.1]),
+            showlegend=False,
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+        )
+        return fig
+
+    def _render_operational_command_tab(self, kpi_df, allocations, incidents):
+        st.subheader("System Health & Operational Readiness")
         sparkline_data = st.session_state.get('sparkline_data', {})
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.metric("🚨 Active Incidents", len(incidents))
+            val = len(incidents)
+            st.metric("🚨 Active Incidents", f"{val}")
             if 'active_incidents' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['active_incidents'], "Incidents", "#E55451"), use_container_width=True)
+                st.plotly_chart(self._plot_kpi_health_gauge(
+                    sparkline_data['active_incidents']['values'], sparkline_data['active_incidents']['range'],
+                    "Incidents", {'normal': '#1E90FF', 'high': '#FF4500', 'low': '#1E90FF'}
+                ), use_container_width=True)
         with c2:
-            st.metric("🚑 Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'))
+            val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+            st.metric("🚑 Available Ambulances", f"{val}")
             if 'available_ambulances' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['available_ambulances'], "Ambulances", "#50C878"), use_container_width=True)
+                st.plotly_chart(self._plot_kpi_health_gauge(
+                    sparkline_data['available_ambulances']['values'], sparkline_data['available_ambulances']['range'],
+                    "Ambulances", {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}
+                ), use_container_width=True)
         with c3:
-            st.metric("📈 Highest Zone Risk", f"{kpi_df['Integrated_Risk_Score'].max():.3f}")
+            val = kpi_df['Integrated_Risk_Score'].max()
+            st.metric("📈 Highest Zone Risk", f"{val:.3f}")
             if 'max_risk' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['max_risk'], "Max Risk", "#AF4035"), use_container_width=True)
+                st.plotly_chart(self._plot_kpi_health_gauge(
+                    sparkline_data['max_risk']['values'], sparkline_data['max_risk']['range'],
+                    "Max Risk", {'normal': '#1E90FF', 'high': '#AF4035', 'low': '#1E90FF'}
+                ), use_container_width=True)
         with c4:
-            st.metric("📊 System Adequacy", f"{kpi_df['Resource Adequacy Index'].mean():.1%}")
+            val = kpi_df['Resource Adequacy Index'].mean()
+            st.metric("📊 System Adequacy", f"{val:.1%}")
             if 'adequacy' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['adequacy'], "Adequacy", "#1E90FF"), use_container_width=True)
+                st.plotly_chart(self._plot_kpi_health_gauge(
+                    sparkline_data['adequacy']['values'], sparkline_data['adequacy']['range'],
+                    "Adequacy", {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}, unit='%'
+                ), use_container_width=True)
         
-        st.caption("Trends over the last 24 hours.")
+        st.caption("Live trend vs. normal operating range (shaded) for the last 24 hours.")
         st.divider()
 
         col1, col2 = st.columns([3, 2])
         with col1:
-            st.subheader("Live Operations Map")
-            self._render_map(kpi_df, incidents, allocations)
+            st.subheader("Dynamic Operations Canvas")
+            self._render_dynamic_map(kpi_df, incidents, allocations)
         with col2:
-            active_strategy = self.engine.model_params.get('allocation_strategy', 'proportional').upper()
-            st.subheader(f"Official Recommendation ({active_strategy})")
-            
-            if allocations:
-                alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).sort_values('Recommended Units', ascending=False)
-                st.dataframe(alloc_df.set_index('Zone'), use_container_width=True, height=250)
-            
-            st.divider()
-            st.subheader("Prescriptive Strategy Comparison")
-            
-            comparison_df = st.session_state.get('allocation_comparison_df')
-            if comparison_df is not None and not comparison_df.empty:
-                top_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
-                plot_df = comparison_df[comparison_df['Zone'].isin(top_zones)]
+            st.subheader("Resource-to-Risk Adequacy")
+            self._plot_resource_to_risk_adequacy(kpi_df, allocations)
 
-                fig = px.bar(
-                    plot_df,
-                    x="Recommended Units",
-                    y="Zone",
-                    color="Strategy",
-                    barmode="group",
-                    orientation='h',
-                    title="Allocation Recommendations by Model",
-                    labels={'Recommended Units': 'Number of Ambulances'},
-                    height=400
-                )
-                fig.update_layout(
-                    yaxis={'categoryorder':'total descending'},
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                st.info("""
-                **Insight:** This chart compares the naive `Proportional` model with advanced `Linear (MILP)` and `Non-Linear (NLP)` optimization models. 
-                *   Look for where **NLP** differs - it often assigns units to less obvious zones to account for congestion or diminishing returns, representing a more robust, real-world strategy.
-                """)
-            else:
-                st.warning("Could not generate allocation comparison data.")
+    def _plot_resource_to_risk_adequacy(self, kpi_df, allocations):
+        if kpi_df.empty:
+            st.info("No data available for risk adequacy plot.")
+            return
 
+        top_zones_df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
+        top_zones_df['allocated_units'] = top_zones_df['Zone'].map(allocations).fillna(0)
+        
+        system_avg_ratio = sum(allocations.values()) / (kpi_df['Expected Incident Volume'].sum() + 1e-6)
+        top_zones_df['adequacy_score'] = (top_zones_df['allocated_units'] / (top_zones_df['Expected Incident Volume'] + 1e-6)) / (system_avg_ratio + 1e-6)
+        
+        def get_color(score):
+            if score < 0.7: return '#FF4500' # Red (Critical)
+            if score < 1.0: return '#FFD700' # Yellow (Stretched)
+            return '#50C878' # Green (Adequate)
+        top_zones_df['adequacy_color'] = top_zones_df['adequacy_score'].apply(get_color)
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=top_zones_df['Zone'], x=top_zones_df['Integrated_Risk_Score'],
+            orientation='h', name='Integrated Risk',
+            marker_color='lightgrey',
+            text=top_zones_df['Integrated_Risk_Score'].apply(lambda x: f'{x:.3f}'),
+            textposition='auto'
+        ))
+        fig.add_trace(go.Scatter(
+            y=top_zones_df['Zone'], x=top_zones_df['Integrated_Risk_Score'],
+            mode='markers+text', name='Allocated Units',
+            marker=dict(symbol='line-ns-open', color=top_zones_df['adequacy_color'], size=18, line=dict(width=3)),
+            text=top_zones_df['allocated_units'].astype(int),
+            textfont=dict(size=12, color='white'),
+            hovertemplate="<b>Zone:</b> %{y}<br><b>Risk:</b> %{x:.3f}<br><b>Allocated Units:</b> %{text}<extra></extra>"
+        ))
+
+        fig.update_layout(
+            title='Resource vs. Demand for High-Risk Zones',
+            xaxis_title='Integrated Risk Score (Demand)', yaxis_title=None,
+            height=450,
+            yaxis={'categoryorder':'total ascending'},
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            barmode='overlay'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.info("""
+        **How to Read:** The grey bar shows the risk level (demand). The colored marker shows the allocated units (supply).
+        **<span style='color:#50C878'>● Green:</span>** Adequately resourced for its risk.
+        **<span style='color:#FFD700'>● Yellow:</span>** Stretched resources.
+        **<span style='color:#FF4500'>● Red:</span>** Critically under-resourced. Action may be required.
+        """, unsafe_allow_html=True)
+
+    def _render_dynamic_map(self, kpi_df, incidents, allocations):
+        if self.dm.zones_gdf.empty or kpi_df.empty: return
+        try:
+            map_gdf = self.dm.zones_gdf.join(kpi_df.set_index('Zone'))
+            center = map_gdf.union_all().centroid
+            m = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="cartodbpositron", prefer_canvas=True)
+            
+            folium.GeoJson(map_gdf, style_function=lambda x: {'color': '#555', 'weight': 1, 'fillOpacity': 0.1}).add_to(m)
+
+            chaos_min, chaos_max = kpi_df['Chaos Sensitivity Score'].min(), kpi_df['Chaos Sensitivity Score'].max()
+            def get_pulse_duration(score):
+                if chaos_max > chaos_min:
+                    norm_score = (score - chaos_min) / (chaos_max - chaos_min)
+                    return 0.5 + (1 - norm_score) * 1.5
+                return 2.0
+
+            hotspot_fg = folium.FeatureGroup(name='Risk Hotspots', show=True)
+            for idx, row in kpi_df[kpi_df['Integrated_Risk_Score'] > 0.5].iterrows():
+                pulse_duration = get_pulse_duration(row['Chaos Sensitivity Score'])
+                folium.CircleMarker(
+                    location=[row['geometry'].centroid.y, row['geometry'].centroid.x],
+                    radius=row['Integrated_Risk_Score'] * 20,
+                    color=px.colors.sequential.YlOrRd[-1], fill=True, fill_color=px.colors.sequential.YlOrRd[-2], fill_opacity=0.6,
+                    tooltip=f"<b>Zone: {row['Zone']}</b><br>Risk: {row['Integrated_Risk_Score']:.3f}<br>Chaos: {row['Chaos Sensitivity Score']:.3f}",
+                    popup=f"<div style='animation: pulse {pulse_duration}s infinite;'></div>"
+                ).add_to(hotspot_fg)
+            hotspot_fg.add_to(m)
+
+            ambulance_fg = folium.FeatureGroup(name='Ambulance 5-Min Reach', show=True)
+            for amb_id, amb_data in self.dm.ambulances.items():
+                if amb_data['status'] == 'Disponible':
+                    isochrone = amb_data['location'].buffer(0.02)
+                    folium.GeoJson(isochrone, style_function=lambda x: {'color': '#1E90FF', 'weight': 1, 'fillColor': '#1E90FF', 'fillOpacity': 0.2}).add_to(ambulance_fg)
+                    folium.Marker(
+                        location=[amb_data['location'].y, amb_data['location'].x],
+                        icon=folium.Icon(color='blue', icon='ambulance', prefix='fa'),
+                        tooltip=f"Ambulance {amb_id} (Available)"
+                    ).add_to(ambulance_fg)
+            ambulance_fg.add_to(m)
+
+            folium.LayerControl().add_to(m)
+            st_folium(m, use_container_width=True, height=600)
+        except Exception as e:
+            logger.error(f"Failed to render dynamic map: {e}", exc_info=True)
+            st.error(f"Error rendering dynamic map: {e}")
+            
     def _render_sidebar(self):
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
@@ -238,37 +325,12 @@ class Dashboard:
             )
         else:
             st.sidebar.error("Report generation failed."); st.sidebar.info("Check logs for details.")
-    
-    def _plot_sparkline(self, data, title, color):
-        fig = go.Figure(go.Scatter(
-            x=list(range(len(data))), 
-            y=data, 
-            mode='lines', 
-            line=dict(color=color, width=2.5),
-            fill='tozeroy',
-            fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)'
-        ))
-        
-        fig.update_layout(
-            height=70,
-            margin=dict(l=35, r=5, t=5, b=5),
-            xaxis=dict(visible=False, showgrid=False), 
-            yaxis=dict(
-                visible=True, showticklabels=True, showgrid=False, nticks=3,
-                tickfont=dict(size=9, color='grey'),
-                tickformat=".2f" if pd.Series(data).max() < 1 else ".0f"
-            ),
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            showlegend=False
-        )
-        return fig
             
     def _render_kpi_deep_dive_tab(self, kpi_df, forecast_df):
         st.subheader("Comprehensive Risk Indicator Matrix")
         st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0), use_container_width=True)
         st.divider()
         st.subheader("Advanced Analytical Visualizations")
-
         if not kpi_df.empty:
             tab1, tab2, tab3 = st.tabs(["📍 Zone Vulnerability Quadrant", "📊 Risk Contribution Drill-Down", "📈 Risk Forecast & Uncertainty"])
             with tab1:
@@ -289,52 +351,6 @@ class Dashboard:
                     self._plot_forecast_with_uncertainty(forecast_df, selected_zones_fc)
         else:
             st.info("Insufficient data for advanced plots.")
-
-    def _render_map(self, kpi_df, incidents, allocations):
-        if self.dm.zones_gdf.empty or kpi_df.empty: return
-        try:
-            map_gdf = self.dm.zones_gdf.join(kpi_df.set_index('Zone'))
-            map_gdf.reset_index(inplace=True)
-            center = map_gdf.union_all().centroid
-            m = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="cartodbpositron", prefer_canvas=True)
-            
-            choropleth = folium.Choropleth(
-                geo_data=map_gdf.to_json(), data=map_gdf,
-                columns=['name', 'Integrated_Risk_Score'], key_on='feature.properties.name',
-                fill_color='YlOrRd', fill_opacity=0.6, line_opacity=0.2, legend_name='Integrated Risk Score', name='Risk Heatmap'
-            ).add_to(m)
-
-            tooltip_html = "<b>Zone:</b> {name}<br><b>Risk:</b> {risk:.3f}<br><b>Expected Incidents:</b> {exp_inc:.2f}"
-            map_gdf['tooltip'] = map_gdf.apply(lambda row: tooltip_html.format(name=row['name'], risk=row['Integrated_Risk_Score'], exp_inc=row['Expected Incident Volume']), axis=1)
-            folium.GeoJson(map_gdf, style_function=lambda x: {'color': 'black', 'weight': 1, 'fillOpacity': 0},
-                           tooltip=folium.features.GeoJsonTooltip(fields=['tooltip'], labels=False)).add_to(choropleth.geojson)
-            
-            incidents_fg = folium.FeatureGroup(name='Active Incidents', show=True)
-            for inc in incidents:
-                if 'location' in inc and 'lat' in inc['location'] and 'lon' in inc['location']:
-                    folium.Marker(
-                        location=[inc['location']['lat'], inc['location']['lon']],
-                        tooltip=f"Type: {inc['type']}<br>Triage: {inc['triage']}",
-                        icon=folium.Icon(color='red', icon='info-sign')
-                    ).add_to(incidents_fg)
-            incidents_fg.add_to(m)
-
-            staging_fg = folium.FeatureGroup(name='Recommended Staging Areas', show=True)
-            for zone, units in allocations.items():
-                if units > 0:
-                    zone_geom = map_gdf[map_gdf['name'] == zone].geometry.iloc[0].centroid
-                    folium.Marker(
-                        location=[zone_geom.y, zone_geom.x],
-                        tooltip=f"Stage {units} unit(s) in Zone {zone}",
-                        icon=folium.Icon(color='blue', icon='plus-sign', prefix='fa')
-                    ).add_to(staging_fg)
-            staging_fg.add_to(m)
-            
-            folium.LayerControl().add_to(m)
-            st_folium(m, use_container_width=True, height=600)
-        except Exception as e:
-            logger.error(f"Failed to render map: {e}", exc_info=True)
-            st.error(f"Error rendering map: {e}")
 
     def _render_methodology_tab(self):
         st.header("System Architecture & Methodology")
