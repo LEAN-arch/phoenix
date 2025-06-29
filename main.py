@@ -10,6 +10,7 @@ import warnings
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+# --- FIX: Added for type hinting the return value of plotting functions ---
 from typing import Tuple
 
 # Import from our refactored modules
@@ -173,6 +174,7 @@ class Dashboard:
         
         st.divider()
         
+        # --- FIX: Refactored section to correctly call plotting methods and render their output ---
         st.subheader("Advanced Analytical Plots")
         
         if not kpi_df.empty:
@@ -195,6 +197,7 @@ class Dashboard:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Insufficient data to generate advanced analytical plots.")
+        # --- END OF FIX ---
         
         st.divider()
         st.subheader("Risk Forecast by Zone")
@@ -229,6 +232,7 @@ class Dashboard:
             st.error(f"Error rendering map: {e}")
 
     def _render_methodology_tab(self):
+        # This section is preserved exactly as you provided it.
         st.header("System Architecture & Methodology")
         st.markdown("""
         ### I. High-Level Goal & Architectural Philosophy
@@ -318,6 +322,7 @@ class Dashboard:
         *   **Integrated Risk Score:** The ultimate, final risk metric, combining the Ensemble score with all Advanced AI & Complexity KPIs. **This is the primary score used for forecasting and allocation.**
         """)
 
+    # --- FIX: Refactored plotting methods to be "pure" functions that RETURN objects ---
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame) -> Tuple[str, str, go.Figure]:
         title = "Risk Contribution Analysis"
         help_text = "This sunburst chart breaks down the final `Integrated_Risk_Score` for the highest-risk zone, showing the contribution of each analytical layer."
