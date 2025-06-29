@@ -231,7 +231,7 @@ class Dashboard:
                 return 2.0
 
             hotspot_fg = folium.FeatureGroup(name='Risk Hotspots', show=True)
-            # FIX IS APPLIED IN THIS LOOP
+            # --- SYNTAX FIX APPLIED HERE ---
             for idx, row in kpi_df[kpi_df['Integrated_Risk_Score'] > 0.5].iterrows():
                 pulse_duration = get_pulse_duration(row['Chaos Sensitivity Score'])
                 folium.CircleMarker(
@@ -458,4 +458,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-   
