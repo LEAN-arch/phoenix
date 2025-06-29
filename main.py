@@ -146,19 +146,35 @@ class Dashboard:
         else:
             st.sidebar.error("Report generation failed."); st.sidebar.info("Check logs for details.")
     
+    # --- FIX: THIS IS THE MODIFIED FUNCTION ---
     def _plot_sparkline(self, data, title, color):
+        """Helper function to create a compact sparkline with a subtle y-axis for context."""
         fig = go.Figure(go.Scatter(
             x=list(range(len(data))), 
             y=data, 
             mode='lines', 
-            line=dict(color=color, width=2),
+            line=dict(color=color, width=2.5),
             fill='tozeroy',
             fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)'
         ))
+        
         fig.update_layout(
-            height=60, margin=dict(l=0, r=0, t=5, b=5),
-            xaxis=dict(visible=False), yaxis=dict(visible=False),
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            height=70,  # Slightly taller to accommodate axis
+            margin=dict(l=35, r=5, t=5, b=5), # Add left margin for the axis
+            xaxis=dict(
+                visible=False,
+                showgrid=False
+            ), 
+            yaxis=dict(
+                visible=True,           # Make Y-axis visible
+                showticklabels=True,    # Show the numbers (tick labels)
+                showgrid=False,         # No distracting grid lines
+                nticks=3,               # Aim for 3 tick marks (e.g., min, mid, max)
+                tickfont=dict(size=9, color='grey'), # Use a small, subtle font
+                tickformat=".2f" if pd.Series(data).max() < 1 else ".0f" # Format ticks appropriately
+            ),
+            plot_bgcolor='rgba(0,0,0,0)', 
+            paper_bgcolor='rgba(0,0,0,0)',
             showlegend=False
         )
         return fig
@@ -255,7 +271,6 @@ class Dashboard:
             map_gdf = self.dm.zones_gdf.join(kpi_df.set_index('Zone'))
             map_gdf.reset_index(inplace=True)
             
-            # DeprecationWarning Fix
             center = map_gdf.union_all().centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="cartodbpositron", prefer_canvas=True)
             
@@ -272,7 +287,6 @@ class Dashboard:
             
             incidents_fg = folium.FeatureGroup(name='Active Incidents', show=True)
             for inc in incidents:
-                # KeyError Fix
                 if 'location' in inc and 'lat' in inc['location'] and 'lon' in inc['location']:
                     folium.Marker(
                         location=[inc['location']['lat'], inc['location']['lon']],
