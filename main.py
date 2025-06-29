@@ -75,85 +75,64 @@ class Dashboard:
         with tab3:
             self._render_methodology_tab()
 
-    def _plot_kpi_health_gauge(self, data, normal_range, title, color_map, unit=""):
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=list(range(len(data))),
-            y=[normal_range[1]] * len(data),
-            mode='lines', line=dict(color='rgba(0,0,0,0)'),
-            showlegend=False
-        ))
-        fig.add_trace(go.Scatter(
-            x=list(range(len(data))),
-            y=[normal_range[0]] * len(data),
-            mode='lines', line=dict(color='rgba(0,0,0,0)'),
-            fill='tonexty', fillcolor='rgba(180, 180, 180, 0.2)',
-            name='Normal Range', showlegend=False
-        ))
-        
-        current_val = data[-1]
-        if current_val > normal_range[1]:
-            line_color = color_map['high']
-        elif current_val < normal_range[0]:
-            line_color = color_map['low']
-        else:
-            line_color = color_map['normal']
+    def _render_system_status_bar(self, kpi_df, incidents, sparkline_data):
+        st.subheader("System Health Status")
 
-        fig.add_trace(go.Scatter(
-            x=list(range(len(data))), y=data,
-            mode='lines', name='Current Trend',
-            line=dict(color=line_color, width=3)
-        ))
+        incidents_val = len(incidents)
+        incidents_data = sparkline_data.get('active_incidents', {'values': [incidents_val], 'range': [incidents_val-1, incidents_val+1]})
+        
+        ambulances_val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+        ambulances_data = sparkline_data.get('available_ambulances', {'values': [ambulances_val], 'range': [ambulances_val-1, ambulances_val+1]})
+        
+        max_risk_val = kpi_df['Integrated_Risk_Score'].max()
+        max_risk_data = sparkline_data.get('max_risk', {'values': [max_risk_val], 'range': [0, 1]})
+        
+        adequacy_val = kpi_df['Resource Adequacy Index'].mean()
+        adequacy_data = sparkline_data.get('adequacy', {'values': [adequacy_val], 'range': [0, 1]})
 
-        fig.update_layout(
-            height=80, margin=dict(l=5, r=5, t=5, b=5),
-            xaxis=dict(visible=False), 
-            yaxis=dict(visible=False, range=[min(min(data), normal_range[0])*0.9, max(max(data), normal_range[1])*1.1]),
-            showlegend=False,
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        )
-        return fig
+        def get_status(val, normal_range, high_is_bad=True):
+            if (high_is_bad and val > normal_range[1]) or (not high_is_bad and val < normal_range[0]):
+                return "Critical", "#D32F2F" # Red
+            if (high_is_bad and val > normal_range[0]) or (not high_is_bad and val < normal_range[1]):
+                return "Elevated", "#FBC02D" # Yellow
+            return "Normal", "#388E3C" # Green
+
+        def get_trend_arrow(data):
+            if len(data) < 2: return ""
+            if data[-1] > data[-2]: return "▲"
+            if data[-1] < data[-2]: return "▼"
+            return "▬"
+
+        inc_status, inc_color = get_status(incidents_val, incidents_data['range'])
+        amb_status, amb_color = get_status(ambulances_val, ambulances_data['range'], high_is_bad=False)
+        risk_status, risk_color = get_status(max_risk_val, max_risk_data['range'])
+        adeq_status, adeq_color = get_status(adequacy_val, adequacy_data['range'], high_is_bad=False)
+
+        st.markdown(f"""
+        <div style="width: 100%; display: flex; border: 1px solid #444; border-radius: 5px; overflow: hidden; font-family: sans-serif;">
+            <div style="flex: 1; background-color: {inc_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{incidents_val} {get_trend_arrow(incidents_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Active Incidents</div>
+            </div>
+            <div style="flex: 1; background-color: {amb_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{ambulances_val} {get_trend_arrow(ambulances_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Available Units</div>
+            </div>
+            <div style="flex: 1; background-color: {risk_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{max_risk_val:.3f} {get_trend_arrow(max_risk_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Max Zone Risk</div>
+            </div>
+            <div style="flex: 1; background-color: {adeq_color}; padding: 10px; text-align: center; color: white;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{adequacy_val:.1%} {get_trend_arrow(adequacy_data['values'])}</div>
+                <div style="font-size: 0.8rem;">System Adequacy</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     def _render_operational_command_tab(self, kpi_df, allocations, incidents):
-        st.subheader("System Health & Operational Readiness")
         sparkline_data = st.session_state.get('sparkline_data', {})
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            val = len(incidents)
-            st.metric("🚨 Active Incidents", f"{val}")
-            if 'active_incidents' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_health_gauge(
-                    sparkline_data['active_incidents']['values'], sparkline_data['active_incidents']['range'],
-                    "Incidents", {'normal': '#1E90FF', 'high': '#FF4500', 'low': '#1E90FF'}
-                ), use_container_width=True)
-        with c2:
-            val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-            st.metric("🚑 Available Ambulances", f"{val}")
-            if 'available_ambulances' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_health_gauge(
-                    sparkline_data['available_ambulances']['values'], sparkline_data['available_ambulances']['range'],
-                    "Ambulances", {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}
-                ), use_container_width=True)
-        with c3:
-            val = kpi_df['Integrated_Risk_Score'].max()
-            st.metric("📈 Highest Zone Risk", f"{val:.3f}")
-            if 'max_risk' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_health_gauge(
-                    sparkline_data['max_risk']['values'], sparkline_data['max_risk']['range'],
-                    "Max Risk", {'normal': '#1E90FF', 'high': '#AF4035', 'low': '#1E90FF'}
-                ), use_container_width=True)
-        with c4:
-            val = kpi_df['Resource Adequacy Index'].mean()
-            st.metric("📊 System Adequacy", f"{val:.1%}")
-            if 'adequacy' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_health_gauge(
-                    sparkline_data['adequacy']['values'], sparkline_data['adequacy']['range'],
-                    "Adequacy", {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}, unit='%'
-                ), use_container_width=True)
         
-        st.caption("Live trend vs. normal operating range (shaded) for the last 24 hours.")
+        self._render_system_status_bar(kpi_df, incidents, sparkline_data)
         st.divider()
 
         col1, col2 = st.columns([3, 2])
@@ -162,9 +141,9 @@ class Dashboard:
             self._render_dynamic_map(kpi_df, incidents, allocations)
         with col2:
             st.subheader("Resource-to-Risk Adequacy")
-            self._plot_resource_to_risk_adequacy(kpi_df, allocations)
+            self._plot_resource_to_risk_adequacy_v2(kpi_df, allocations)
 
-    def _plot_resource_to_risk_adequacy(self, kpi_df, allocations):
+    def _plot_resource_to_risk_adequacy_v2(self, kpi_df, allocations):
         if kpi_df.empty:
             st.info("No data available for risk adequacy plot.")
             return
@@ -172,51 +151,47 @@ class Dashboard:
         top_zones_df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
         top_zones_df['allocated_units'] = top_zones_df['Zone'].map(allocations).fillna(0)
         
-        system_avg_ratio = sum(allocations.values()) / (kpi_df['Expected Incident Volume'].sum() + 1e-6)
-        top_zones_df['adequacy_score'] = (top_zones_df['allocated_units'] / (top_zones_df['Expected Incident Volume'] + 1e-6)) / (system_avg_ratio + 1e-6)
+        risk_coverage_per_unit = self.config['model_params'].get('risk_coverage_per_unit', 0.25)
+        top_zones_df['risk_covered'] = top_zones_df['allocated_units'] * risk_coverage_per_unit
         
-        def get_color(score):
-            if score < 0.7: return '#FF4500' # Red (Critical)
-            if score < 1.0: return '#FFD700' # Yellow (Stretched)
-            return '#50C878' # Green (Adequate)
-        top_zones_df['adequacy_color'] = top_zones_df['adequacy_score'].apply(get_color)
+        top_zones_df['adequacy_ratio'] = (top_zones_df['risk_covered'] / top_zones_df['Integrated_Risk_Score']).clip(0, 1.5)
+
+        def get_color(ratio):
+            if ratio < 0.7: return '#D32F2F' # Red
+            if ratio < 1.0: return '#FBC02D' # Yellow
+            return '#388E3C' # Green
+        top_zones_df['adequacy_color'] = top_zones_df['adequacy_ratio'].apply(get_color)
 
         fig = go.Figure()
         fig.add_trace(go.Bar(
             y=top_zones_df['Zone'], x=top_zones_df['Integrated_Risk_Score'],
-            orientation='h', name='Integrated Risk',
-            marker_color='lightgrey',
-            text=top_zones_df['Integrated_Risk_Score'].apply(lambda x: f'{x:.3f}'),
-            textposition='auto'
+            orientation='h', name='Total Risk (Demand)',
+            marker_color='#e0e0e0',
+            hovertemplate="<b>Zone:</b> %{y}<br><b>Total Risk:</b> %{x:.3f}<extra></extra>"
         ))
-        fig.add_trace(go.Scatter(
-            y=top_zones_df['Zone'], x=top_zones_df['Integrated_Risk_Score'],
-            mode='markers+text', name='Allocated Units',
-            marker=dict(symbol='line-ns-open', color=top_zones_df['adequacy_color'], size=18, line=dict(width=3)),
-            text=top_zones_df['allocated_units'].astype(int),
-            textfont=dict(size=12, color='white'),
-            hovertemplate="<b>Zone:</b> %{y}<br><b>Risk:</b> %{x:.3f}<br><b>Allocated Units:</b> %{text}<extra></extra>"
+        fig.add_trace(go.Bar(
+            y=top_zones_df['Zone'], x=top_zones_df['risk_covered'],
+            orientation='h', name='Covered Risk (Supply)',
+            marker_color=top_zones_df['adequacy_color'],
+            text=top_zones_df['allocated_units'].astype(int).astype(str) + " Unit(s)",
+            textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=12),
+            hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Covered:</b> %{x:.3f}<br><b>Allocated:</b> %{text}<extra></extra>"
         ))
 
         fig.update_layout(
             title='Resource vs. Demand for High-Risk Zones',
-            xaxis_title='Integrated Risk Score (Demand)', yaxis_title=None,
+            xaxis_title='Integrated Risk Score', yaxis_title=None,
             height=450,
             yaxis={'categoryorder':'total ascending'},
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            barmode='overlay'
+            barmode='overlay',
+            plot_bgcolor='white'
         )
         st.plotly_chart(fig, use_container_width=True)
-        
         st.markdown("""
-        <div style="border: 1px solid #90CAF9; border-radius: 0.5rem; padding: 1rem; background-color: #E3F2FD;">
-        <strong>How to Read:</strong> The grey bar shows the risk level (demand). The colored marker shows the allocated units (supply).<br>
-        <span style='color:#50C878'>● <b>Green:</b></span> Adequately resourced for its risk.<br>
-        <span style='color:#FFD700'>● <b>Yellow:</b></span> Stretched resources.<br>
-        <span style='color:#FF4500'>● <b>Red:</b></span> Critically under-resourced. Action may be required.
-        </div>
-        """, unsafe_allow_html=True)
-
+        **How to Read:** The light grey bar shows the total risk. The colored overlay shows how much of that risk is "covered" by the allocated units.
+        """)
+        
     def _render_dynamic_map(self, kpi_df, incidents, allocations):
         if self.dm.zones_gdf.empty or kpi_df.empty: return
         try:
@@ -258,7 +233,7 @@ class Dashboard:
             ambulance_fg.add_to(m)
 
             folium.LayerControl().add_to(m)
-            st_folium(m, use_container_width=True, height=600)
+            st_folium(m, use_container_width=True, height=550)
         except Exception as e:
             logger.error(f"Failed to render dynamic map: {e}", exc_info=True)
             st.error(f"Error rendering dynamic map: {e}")
