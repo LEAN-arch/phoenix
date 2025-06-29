@@ -1,5 +1,5 @@
 # requirements.txt
-# Dependencies for RedShield AI: Phoenix v4.0
+# Dependencies for RedShield AI: Phoenix v4.0 (Python 3.12+ compatible)
 
 # --- Core Web Framework ---
 streamlit==1.38.0             # The main framework for building the interactive web app UI
@@ -7,7 +7,7 @@ streamlit==1.38.0             # The main framework for building the interactive 
 # --- Data Handling and Numerical Computation ---
 pandas==2.2.3                 # For data manipulation and analysis (DataFrames)
 numpy==1.26.4                 # Fundamental package for numerical computing
-scipy==1.10.1                 # For scientific and technical computing (e.g., stats, norm)
+scipy==1.13.1                 # For scientific and technical computing (e.g., stats, norm) [VERSION UPDATED FOR PYTHON 3.12+ COMPATIBILITY]
 
 # --- Geospatial Analysis ---
 geopandas==1.0.1              # For working with geospatial data, enables spatial joins
