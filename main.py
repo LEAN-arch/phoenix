@@ -60,15 +60,20 @@ class Dashboard:
         env_factors = st.session_state['env_factors']
         historical_data = st.session_state['historical_data']
 
-        with st.spinner("Executing Advanced Analytics Pipeline..."):
+        with st.spinner("Executing Advanced Analytics & Optimization Pipeline..."):
             current_incidents = self.dm.get_current_incidents(env_factors)
             kpi_df, sparkline_data = self.engine.generate_kpis_with_sparklines(historical_data, env_factors, current_incidents)
             forecast_df = self.engine.generate_forecast(kpi_df)
+            
+            # Call the main configured allocation method
             allocations = self.engine.generate_allocation_recommendations(kpi_df)
-        
+            # Call a new helper method to get the comparison data
+            allocation_comparison_df = self._get_allocation_comparison_data(kpi_df)
+
         st.session_state['kpi_df'] = kpi_df
         st.session_state['forecast_df'] = forecast_df
         st.session_state['allocations'] = allocations
+        st.session_state['allocation_comparison_df'] = allocation_comparison_df # Store in session state
         st.session_state['sparkline_data'] = sparkline_data
 
         tab1, tab2, tab3 = st.tabs(["🔥 Operational Dashboard", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
@@ -79,6 +84,94 @@ class Dashboard:
             self._render_kpi_deep_dive_tab(kpi_df, forecast_df)
         with tab3:
             self._render_methodology_tab()
+
+    def _get_allocation_comparison_data(self, kpi_df: pd.DataFrame) -> pd.DataFrame:
+        """Runs all three allocation models to generate data for a comparison chart."""
+        available_units = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+        if available_units == 0 or kpi_df.empty:
+            return pd.DataFrame()
+            
+        proportional_alloc = self.engine._allocate_proportional(kpi_df, available_units)
+        milp_alloc = self.engine._allocate_milp(kpi_df, available_units)
+        nlp_alloc = self.engine._allocate_nlp(kpi_df, available_units)
+        
+        # Combine results into a single DataFrame
+        df = pd.DataFrame({
+            'Proportional': proportional_alloc,
+            'Linear Optimal (MILP)': milp_alloc,
+            'Non-Linear Optimal (NLP)': nlp_alloc
+        }).reset_index().rename(columns={'index': 'Zone'})
+        
+        return df.melt(id_vars='Zone', var_name='Strategy', value_name='Recommended Units')
+
+    def _render_main_dashboard_tab(self, kpi_df, allocations, incidents):
+        st.subheader("System Health & Live Operations")
+        sparkline_data = st.session_state.get('sparkline_data', {})
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("🚨 Active Incidents", len(incidents))
+            if 'active_incidents' in sparkline_data:
+                st.plotly_chart(self._plot_sparkline(sparkline_data['active_incidents'], "Incidents", "#E55451"), use_container_width=True)
+        with c2:
+            st.metric("🚑 Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'))
+            if 'available_ambulances' in sparkline_data:
+                st.plotly_chart(self._plot_sparkline(sparkline_data['available_ambulances'], "Ambulances", "#50C878"), use_container_width=True)
+        with c3:
+            st.metric("📈 Highest Zone Risk", f"{kpi_df['Integrated_Risk_Score'].max():.3f}")
+            if 'max_risk' in sparkline_data:
+                st.plotly_chart(self._plot_sparkline(sparkline_data['max_risk'], "Max Risk", "#AF4035"), use_container_width=True)
+        with c4:
+            st.metric("📊 System Adequacy", f"{kpi_df['Resource Adequacy Index'].mean():.1%}")
+            if 'adequacy' in sparkline_data:
+                st.plotly_chart(self._plot_sparkline(sparkline_data['adequacy'], "Adequacy", "#1E90FF"), use_container_width=True)
+        
+        st.caption("Trends over the last 24 hours.")
+        st.divider()
+
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            st.subheader("Live Operations Map")
+            self._render_map(kpi_df, incidents, allocations)
+        with col2:
+            active_strategy = self.engine.model_params.get('allocation_strategy', 'proportional').upper()
+            st.subheader(f"Official Recommendation ({active_strategy})")
+            
+            if allocations:
+                alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).sort_values('Recommended Units', ascending=False)
+                st.dataframe(alloc_df.set_index('Zone'), use_container_width=True, height=250)
+            
+            st.divider()
+            st.subheader("Prescriptive Strategy Comparison")
+            
+            comparison_df = st.session_state.get('allocation_comparison_df')
+            if comparison_df is not None and not comparison_df.empty:
+                top_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
+                plot_df = comparison_df[comparison_df['Zone'].isin(top_zones)]
+
+                fig = px.bar(
+                    plot_df,
+                    x="Recommended Units",
+                    y="Zone",
+                    color="Strategy",
+                    barmode="group",
+                    orientation='h',
+                    title="Allocation Recommendations by Model",
+                    labels={'Recommended Units': 'Number of Ambulances'},
+                    height=400
+                )
+                fig.update_layout(
+                    yaxis={'categoryorder':'total descending'},
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.info("""
+                **Insight:** This chart compares the naive `Proportional` model with advanced `Linear (MILP)` and `Non-Linear (NLP)` optimization models. 
+                *   Look for where **NLP** differs - it often assigns units to less obvious zones to account for congestion or diminishing returns, representing a more robust, real-world strategy.
+                """)
+            else:
+                st.warning("Could not generate allocation comparison data.")
 
     def _render_sidebar(self):
         st.sidebar.title("Strategic Controls")
@@ -146,9 +239,7 @@ class Dashboard:
         else:
             st.sidebar.error("Report generation failed."); st.sidebar.info("Check logs for details.")
     
-    # --- FIX: THIS IS THE MODIFIED FUNCTION ---
     def _plot_sparkline(self, data, title, color):
-        """Helper function to create a compact sparkline with a subtle y-axis for context."""
         fig = go.Figure(go.Scatter(
             x=list(range(len(data))), 
             y=data, 
@@ -159,93 +250,27 @@ class Dashboard:
         ))
         
         fig.update_layout(
-            height=70,  # Slightly taller to accommodate axis
-            margin=dict(l=35, r=5, t=5, b=5), # Add left margin for the axis
-            xaxis=dict(
-                visible=False,
-                showgrid=False
-            ), 
+            height=70,
+            margin=dict(l=35, r=5, t=5, b=5),
+            xaxis=dict(visible=False, showgrid=False), 
             yaxis=dict(
-                visible=True,           # Make Y-axis visible
-                showticklabels=True,    # Show the numbers (tick labels)
-                showgrid=False,         # No distracting grid lines
-                nticks=3,               # Aim for 3 tick marks (e.g., min, mid, max)
-                tickfont=dict(size=9, color='grey'), # Use a small, subtle font
-                tickformat=".2f" if pd.Series(data).max() < 1 else ".0f" # Format ticks appropriately
+                visible=True, showticklabels=True, showgrid=False, nticks=3,
+                tickfont=dict(size=9, color='grey'),
+                tickformat=".2f" if pd.Series(data).max() < 1 else ".0f"
             ),
-            plot_bgcolor='rgba(0,0,0,0)', 
-            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
             showlegend=False
         )
         return fig
-
-    def _render_main_dashboard_tab(self, kpi_df, allocations, incidents):
-        st.subheader("System Health & Live Operations")
-        sparkline_data = st.session_state.get('sparkline_data', {})
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("🚨 Active Incidents", len(incidents))
-            if 'active_incidents' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['active_incidents'], "Incidents", "#E55451"), use_container_width=True)
-        with c2:
-            st.metric("🚑 Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'))
-            if 'available_ambulances' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['available_ambulances'], "Ambulances", "#50C878"), use_container_width=True)
-        with c3:
-            st.metric("📈 Highest Zone Risk", f"{kpi_df['Integrated_Risk_Score'].max():.3f}")
-            if 'max_risk' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['max_risk'], "Max Risk", "#AF4035"), use_container_width=True)
-        with c4:
-            st.metric("📊 System Adequacy", f"{kpi_df['Resource Adequacy Index'].mean():.1%}")
-            if 'adequacy' in sparkline_data:
-                st.plotly_chart(self._plot_sparkline(sparkline_data['adequacy'], "Adequacy", "#1E90FF"), use_container_width=True)
-        
-        st.caption("Trends over the last 24 hours.")
-        st.divider()
-
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            st.subheader("Live Operations Map")
-            self._render_map(kpi_df, incidents, allocations)
-        with col2:
-            st.subheader("Recommended Ambulance Allocation")
-            if allocations:
-                alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).sort_values('Recommended Units', ascending=True)
-                fig = px.bar(alloc_df, x='Recommended Units', y='Zone', orientation='h', title="Units per Zone", text='Recommended Units')
-                fig.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=300, yaxis_title=None)
-                fig.update_traces(textposition='outside', marker_color='#E55451')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            st.subheader("Top 5 Highest-Risk Zones")
-            if not kpi_df.empty:
-                top_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')[['Zone', 'Integrated_Risk_Score', 'Expected Incident Volume']]
-                fig_top = go.Figure()
-                fig_top.add_trace(go.Bar(
-                    y=top_zones['Zone'], x=top_zones['Integrated_Risk_Score'],
-                    name='Integrated Risk Score', orientation='h',
-                    text=top_zones['Integrated_Risk_Score'].apply(lambda x: f'{x:.3f}'),
-                    marker_color='#AF4035'
-                ))
-                fig_top.update_layout(
-                    title="Top Zones by Integrated Risk",
-                    xaxis_title="Integrated Risk Score", yaxis_title=None,
-                    height=250, margin=dict(l=10, r=10, t=40, b=10),
-                    yaxis={'categoryorder':'total ascending'},
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig_top, use_container_width=True)
             
     def _render_kpi_deep_dive_tab(self, kpi_df, forecast_df):
         st.subheader("Comprehensive Risk Indicator Matrix")
         st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0), use_container_width=True)
-        
         st.divider()
         st.subheader("Advanced Analytical Visualizations")
 
         if not kpi_df.empty:
             tab1, tab2, tab3 = st.tabs(["📍 Zone Vulnerability Quadrant", "📊 Risk Contribution Drill-Down", "📈 Risk Forecast & Uncertainty"])
-            
             with tab1:
                 st.markdown("**Analysis:** This plot segments zones by their long-term structural vulnerability vs. their immediate dynamic risk.")
                 self._plot_vulnerability_quadrant(kpi_df)
@@ -270,7 +295,6 @@ class Dashboard:
         try:
             map_gdf = self.dm.zones_gdf.join(kpi_df.set_index('Zone'))
             map_gdf.reset_index(inplace=True)
-            
             center = map_gdf.union_all().centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="cartodbpositron", prefer_canvas=True)
             
@@ -328,24 +352,17 @@ class Dashboard:
             #### **I. Stochastic & Statistical Modeling**
             *   **Non-Homogeneous Poisson Process (NHPP):** Models the time-varying baseline incident rate (`μ`), capturing predictable daily and weekly patterns.
             *   **Hawkes Process (Self-Exciting):** The core of our trauma/violence clustering models. It assumes some events can trigger "aftershocks."
-                > *Mathematical Intuition:* `λ(t) = μ(t) + Σ α * exp[-β(t-tᵢ)]`. The rate `λ(t)` is the baseline `μ(t)` plus the decaying influence of every past incident `tᵢ`.
-                > **Significance:** Answers: *"Given a shooting, what is the immediate, elevated risk of another shooting nearby?"*
             *   **Marked Point Processes:** Each incident is treated as a "marked" event with metadata (e.g., `type: 'Trauma'`), allowing models to respond selectively.
             
             #### **II. Spatiotemporal & Graph Models**
-            *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` is a proxy. It interpolates risk intelligently across the map, even in areas with no data.
-            *   **Graph Laplacians (`Spatial Spillover Risk`):** Models the city's road network as a graph to simulate how risk and chaos can diffuse from one zone to its neighbors.
-            *   **Graph Neural Networks (GNNs):** Our `GNN_Structural_Risk` is a proxy. A GNN learns a zone's inherent vulnerability based on its position in the network (e.g., a central hub), independent of recent events.
+            *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` is a proxy. It interpolates risk intelligently across the map.
+            *   **Graph Laplacians (`Spatial Spillover Risk`):** Models the city's road network as a graph to simulate how risk and chaos can diffuse.
+            *   **Graph Neural Networks (GNNs):** Our `GNN_Structural_Risk` is a proxy. A GNN learns a zone's inherent vulnerability based on its position in the network.
             
-            #### **III. Deep Learning, Chaos Theory & Information Theory**
-            *   **Temporal Convolutional Networks (TCNs):** Used for high-resolution time-series forecasting due to their ability to capture long-range temporal patterns efficiently.
-            *   **Lyapunov Exponents (`Chaos Sensitivity Score`):** An "instability alarm." A high score warns that the system is in a fragile state where a small event could cascade into a major crisis.
-            *   **Shannon Entropy (`Risk Entropy`):** Quantifies disorder. Low entropy is good (risk is in predictable hotspots). High entropy is bad (risk is spread thinly, making allocation hard).
-            *   **KL Divergence (`Anomaly Score`):** Measures how much the current incident pattern diverges from the historical baseline. A high score means "today is not a normal day."
-            
-            #### **IV. Optimization & Strategic Layers**
-            *   **Game Theory Models (`Game_Theory_Tension`):** Models the city as a non-cooperative game where zones "compete" for EMS resources. High tension means a zone is a major driver of resource competition.
-            *   **Operational Research Models:** The final allocation algorithm uses a **proportional risk allocation** strategy to optimally distribute a fixed number of assets based on their weighted risk scores.
+            #### **III. Operations Research & Prescriptive Analytics**
+            *   **Mixed-Integer Linear Programming (MILP):** Used for `Linear Optimal` allocation. It finds the best assignment of ambulances to maximize risk coverage under real-world constraints (e.g., total units available).
+            *   **Non-Linear Programming (NLP):** Used for `Non-Linear Optimal` allocation. This more advanced model captures real-world effects like **diminishing returns** (the 1st ambulance in a zone is more valuable than the 5th) and **congestion penalties**. It provides the most realistic and robust recommendations.
+            *   **Queueing Theory:** Conceptually used to model system strain, such as hospital ER wait times, which penalizes the overall system adequacy.
             """)
         with st.expander("III. Key Performance Indicator (KPI) Glossary", expanded=False):
             kpi_defs = {
@@ -364,7 +381,6 @@ class Dashboard:
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame, zone_name: str):
         zone_data = kpi_df[kpi_df['Zone'] == zone_name].iloc[0]
         adv_weights = self.config['model_params'].get('advanced_model_weights', {})
-        
         data = {
             'ids': ['Integrated Risk', 'Base Ensemble', 'Advanced Models', 'STGP', 'HMM', 'GNN', 'Game Theory'],
             'labels': [f"Total: {zone_data['Integrated_Risk_Score']:.2f}", 'Base Ensemble', 'Advanced Models', 'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'],
@@ -378,68 +394,37 @@ class Dashboard:
                 adv_weights.get('gnn', 0) * zone_data['GNN_Structural_Risk'], adv_weights.get('game_theory', 0) * zone_data['Game_Theory_Tension']
             ]
         }
-        fig = go.Figure(go.Sunburst(
-            ids=data['ids'], labels=data['labels'], parents=data['parents'], values=data['values'], branchvalues="total",
-            hovertemplate='<b>%{label}</b><br>Contribution: %{value:.3f}<extra></extra>',
-        ))
+        fig = go.Figure(go.Sunburst(ids=data['ids'], labels=data['labels'], parents=data['parents'], values=data['values'], branchvalues="total", hovertemplate='<b>%{label}</b><br>Contribution: %{value:.3f}<extra></extra>'))
         fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), title_text=f"Risk Breakdown for Zone: {zone_name}", title_x=0.5, height=450)
         st.plotly_chart(fig, use_container_width=True)
 
     def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
         x_mean = kpi_df['Ensemble Risk Score'].mean()
         y_mean = kpi_df['GNN_Structural_Risk'].mean()
-        
-        hover_text = [
-            f"<b>Zone: {row['Zone']}</b><br><br>Dynamic Risk: {row['Ensemble Risk Score']:.3f}<br>Structural Risk: {row['GNN_Structural_Risk']:.3f}<br>Integrated Risk: {row['Integrated_Risk_Score']:.3f}<extra></extra>"
-            for index, row in kpi_df.iterrows()
-        ]
-
-        fig = px.scatter(
-            kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score",
-            size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18
-        )
+        hover_text = [f"<b>Zone: {row['Zone']}</b><br><br>Dynamic Risk: {row['Ensemble Risk Score']:.3f}<br>Structural Risk: {row['GNN_Structural_Risk']:.3f}<br>Integrated Risk: {row['Integrated_Risk_Score']:.3f}<extra></extra>" for index, row in kpi_df.iterrows()]
+        fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score", size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18)
         fig.update_traces(hovertemplate=hover_text)
-
         fig.add_vline(x=x_mean, line_width=1, line_dash="dash", line_color="grey")
         fig.add_hline(y=y_mean, line_width=1, line_dash="dash", line_color="grey")
-        
         fig.add_shape(type="rect", x0=x_mean, y0=y_mean, x1=kpi_df['Ensemble Risk Score'].max()*1.1, y1=kpi_df['GNN_Structural_Risk'].max()*1.1, line=dict(width=0), fillcolor="rgba(255, 0, 0, 0.1)", layer="below")
         fig.add_shape(type="rect", x0=0, y0=y_mean, x1=x_mean, y1=kpi_df['GNN_Structural_Risk'].max()*1.1, line=dict(width=0), fillcolor="rgba(0, 0, 255, 0.1)", layer="below")
         fig.add_shape(type="rect", x0=x_mean, y0=0, x1=kpi_df['Ensemble Risk Score'].max()*1.1, y1=y_mean, line=dict(width=0), fillcolor="rgba(255, 165, 0, 0.1)", layer="below")
-
         fig.add_annotation(x=x_mean*1.5 if x_mean > 0 else 0.8, y=y_mean*1.8 if y_mean > 0 else 0.8, text="<b>Crisis Zones</b>", showarrow=False, font=dict(color="red"))
         fig.add_annotation(x=x_mean/2, y=y_mean*1.8 if y_mean > 0 else 0.8, text="<b>Latent Threats</b>", showarrow=False, font=dict(color="navy"))
         fig.add_annotation(x=x_mean*1.5 if x_mean > 0 else 0.8, y=y_mean/2, text="<b>Acute Hotspots</b>", showarrow=False, font=dict(color="darkorange"))
-        
         fig.update_layout(xaxis_title="Dynamic Risk (Real-time Threat)", yaxis_title="Structural Vulnerability (Intrinsic Threat)", coloraxis_colorbar_title_text='Integrated<br>Risk')
         st.plotly_chart(fig, use_container_width=True)
-    
+
     def _plot_forecast_with_uncertainty(self, forecast_df, selected_zones):
         fig = go.Figure()
         colors = px.colors.qualitative.Plotly
-        
         for i, zone in enumerate(selected_zones):
             zone_df = forecast_df[forecast_df['Zone'] == zone]
             if zone_df.empty: continue
-            
             color = colors[i % len(colors)]
-            
-            fig.add_trace(go.Scatter(
-                x=np.concatenate([zone_df['Horizon (Hours)'], zone_df['Horizon (Hours)'][::-1]]),
-                y=np.concatenate([zone_df['Upper_Bound'], zone_df['Lower_Bound'][::-1]]),
-                fill='toself', fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.2)',
-                line=dict(color='rgba(255,255,255,0)'), hoverinfo="skip", showlegend=False
-            ))
-            fig.add_trace(go.Scatter(
-                x=zone_df['Horizon (Hours)'], y=zone_df['Combined Risk'], name=zone,
-                line=dict(color=color, width=2), mode='lines+markers'
-            ))
-
-        fig.update_layout(
-            title='72-Hour Risk Forecast with 95% Confidence Interval',
-            xaxis_title='Horizon (Hours)', yaxis_title='Projected Integrated Risk Score',
-            legend_title_text='Zone', hovermode="x unified"
-        )
+            fig.add_trace(go.Scatter(x=np.concatenate([zone_df['Horizon (Hours)'], zone_df['Horizon (Hours)'][::-1]]), y=np.concatenate([zone_df['Upper_Bound'], zone_df['Lower_Bound'][::-1]]), fill='toself', fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.2)', line=dict(color='rgba(255,255,255,0)'), hoverinfo="skip", showlegend=False))
+            fig.add_trace(go.Scatter(x=zone_df['Horizon (Hours)'], y=zone_df['Combined Risk'], name=zone, line=dict(color=color, width=2), mode='lines+markers'))
+        fig.update_layout(title='72-Hour Risk Forecast with 95% Confidence Interval', xaxis_title='Horizon (Hours)', yaxis_title='Projected Integrated Risk Score', legend_title_text='Zone', hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
 
 def main():
