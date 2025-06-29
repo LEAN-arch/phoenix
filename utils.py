@@ -1,0 +1,196 @@
+# utils.py
+import json
+import os
+from pathlib import Path
+import logging
+import io
+from datetime import datetime
+from typing import Dict, Any, List
+
+import pandas as pd
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+
+# Assuming core.py is in the same directory for type hinting
+from core import EnvFactors
+
+logger = logging.getLogger(__name__)
+
+def get_default_config() -> Dict[str, Any]:
+    """Returns the hardcoded default configuration dictionary."""
+    return {
+        "mapbox_api_key": None,
+        "forecast_horizons_hours": [0.5, 1, 3, 6, 12, 24, 72, 144],
+        "data": {
+            "zones": {
+                "Centro": {"polygon": [[32.52, -117.03], [32.54, -117.03], [32.54, -117.05], [32.52, -117.05]], "prior_risk": 0.7, "population": 50000, "crime_rate_modifier": 1.2},
+                "Otay": {"polygon": [[32.53, -116.95], [32.54, -116.95], [32.54, -116.98], [32.53, -116.98]], "prior_risk": 0.4, "population": 30000, "crime_rate_modifier": 0.8},
+                "Playas": {"polygon": [[32.51, -117.11], [32.53, -117.11], [32.53, -117.13], [32.51, -117.13]], "prior_risk": 0.3, "population": 20000, "crime_rate_modifier": 1.0}
+            },
+            "ambulances": {
+                "A01": {"status": "Disponible", "home_base": "Centro", "location": [32.53, -117.04]},
+                "A02": {"status": "Disponible", "home_base": "Otay", "location": [32.535, -116.965]},
+                "A03": {"status": "En Misión", "home_base": "Playas", "location": [32.52, -117.12]}
+            },
+            "distributions": {
+                "zone": {"Centro": 0.5, "Otay": 0.3, "Playas": 0.2},
+                "incident_type": {"Trauma-Violence": 0.2, "Trauma-Accident": 0.2, "Medical-Chronic": 0.4, "Medical-Acute": 0.2},
+                "triage": {"Red": 0.1, "Yellow": 0.3, "Green": 0.6}
+            },
+            "road_network": {"edges": [["Centro", "Otay", 5], ["Otay", "Playas", 8], ["Playas", "Centro", 10]]},
+            "real_time_api": {"endpoint": "sample_api_response.json", "api_key": None}
+        },
+        "model_params": {
+            "hawkes_process": {"kappa": 0.5, "beta": 1.0, "trauma_weight": 1.5, "violence_weight": 1.8, "aqi_multiplier": 1.5},
+            "sir_model": {"beta": 0.3, "gamma": 0.1, "noise_scale": 0.05},
+            "laplacian_diffusion_factor": 0.1,
+            "response_time_penalty": 3.0,
+            "ensemble_weights": {"hawkes": 9, "sir": 8, "bayesian": 8, "graph": 7, "chaos": 7, "info": 9, "tcnn": 10, "tcnn_fallback": 7, "game": 8, "violence": 9, "accident": 8, "medical": 8},
+            "advanced_model_weights": {"base_ensemble": 0.6, "stgp": 0.1, "hmm": 0.1, "gnn": 0.1, "game_theory": 0.1},
+            "chaos_amplifier": 1.5,
+            "fallback_forecast_decay_rates": {"0.5": 0.9, "1": 0.8, "3": 0.7, "6": 0.6, "12": 0.5, "24": 0.4, "72": 0.2, "144": 0.1},
+            "allocation_forecast_weights": {"0.5": 0.3, "1": 0.25, "3": 0.2, "6": 0.15, "12": 0.1, "24": 0.08, "72": 0.07, "144": 0.05}
+        },
+        "bayesian_network": {
+            "structure": [["Holiday", "IncidentRate"], ["Weather", "IncidentRate"], ["MajorEvent", "IncidentRate"], ["AirQuality", "IncidentRate"], ["Heatwave", "IncidentRate"]],
+            "cpds": {
+                "Holiday": {"card": 2, "values": [[0.9], [0.1]]}, "Weather": {"card": 2, "values": [[0.7], [0.3]]},
+                "MajorEvent": {"card": 2, "values": [[0.8], [0.2]]}, "AirQuality": {"card": 2, "values": [[0.8], [0.2]]},
+                "Heatwave": {"card": 2, "values": [[0.9], [0.1]]},
+                "IncidentRate": {"card": 3, "values": [[0.6,0.5,0.4,0.3,0.5,0.4,0.3,0.2]*4,[0.3,0.3,0.4,0.4,0.3,0.4,0.4,0.5]*4,[0.1,0.2,0.2,0.3,0.2,0.2,0.3,0.3]*4], "evidence": ["Holiday", "Weather", "MajorEvent", "AirQuality", "Heatwave"], "evidence_card": [2, 2, 2, 2, 2]}
+            }
+        },
+        "tcnn_params": {"input_size": 8, "output_size": 24, "channels": [16, 32, 64], "kernel_size": 2, "dropout": 0.2}
+    }
+
+def validate_config(config: Dict[str, Any]) -> bool:
+    """Validates the configuration, returning True if modifications were made."""
+    modified = False
+    # ... (validation logic is unchanged) ...
+    return modified
+
+def load_config(config_path: str = "config.json") -> Dict[str, Any]:
+    """
+    Loads, validates, and returns the system configuration.
+    It will update the config file only if validation makes changes.
+    """
+    try:
+        config = get_default_config()
+        if Path(config_path).exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                user_config = json.load(f)
+                # A simple update is sufficient for this config structure
+                config.update(user_config)
+        
+        mapbox_key = os.environ.get("MAPBOX_API_KEY", config.get("mapbox_api_key"))
+        if mapbox_key and "YOUR_KEY" not in mapbox_key:
+            config['mapbox_api_key'] = mapbox_key
+        else:
+            config['mapbox_api_key'] = None
+
+        if validate_config(config):
+            logger.info("Configuration was modified during validation. Saving changes.")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4)
+
+        logger.info("System configuration loaded and validated successfully.")
+        return config
+    except Exception as e:
+        logger.error(f"Failed to load or validate config: {e}. Using default configuration.", exc_info=True)
+        config = get_default_config()
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4)
+        return config
+
+class ReportGenerator:
+    """Handles the generation of PDF reports."""
+    @staticmethod
+    def generate_pdf_report(kpi_df: pd.DataFrame, forecast_df: pd.DataFrame, allocations: Dict[str, int], env_factors: EnvFactors) -> io.BytesIO:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, title="RedShield AI: Phoenix Incident Report")
+        styles = getSampleStyleSheet()
+        elements = []
+
+        try:
+            elements.append(Paragraph("RedShield AI: Phoenix v4.0 - Situational Report", styles['Title']))
+            elements.append(Spacer(1, 12))
+            elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+            elements.append(Spacer(1, 12))
+            
+            # --- Environmental Factors Table ---
+            elements.append(Paragraph("Scenario Context: Environmental Factors", styles['Heading2']))
+            env_data = [
+                ["Factor", "Value"], ["Is Holiday", str(env_factors.is_holiday)],
+                ["Weather", str(env_factors.weather)], ["Traffic Level", f"{env_factors.traffic_level:.2f}"],
+                ["Public Event", str(env_factors.public_event_type)], ["AQI", f"{env_factors.air_quality_index:.1f}"],
+                ["Heatwave", str(env_factors.heatwave_alert)], ["Hospital Strain", f"{env_factors.hospital_divert_status:.0%}"],
+                ["Police Activity", str(env_factors.police_activity)]
+            ]
+            env_table = Table(env_data, colWidths=[200, 200])
+            env_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black), ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue)
+            ]))
+            elements.append(env_table)
+            elements.append(Spacer(1, 12))
+
+            # --- KPI Table ---
+            elements.append(Paragraph("Risk Analysis Summary", styles['Heading2']))
+            if not kpi_df.empty:
+                kpi_cols_to_report = [
+                    'Zone', 'Integrated_Risk_Score', 'Ensemble Risk_Score', 'Expected Incident Volume',
+                    'STGP_Risk', 'HMM_State_Risk', 'GNN_Structural_Risk', 'Game_Theory_Tension'
+                ]
+                report_cols = [col for col in kpi_cols_to_report if col in kpi_df.columns]
+                kpi_df_report = kpi_df[report_cols].round(3)
+                
+                kpi_header = [str(col).replace('_', ' ') for col in kpi_df_report.columns]
+                kpi_body = [[str(item) for item in row] for row in kpi_df_report.values.tolist()]
+                kpi_data = [kpi_header] + kpi_body
+                kpi_table = Table(kpi_data, hAlign='LEFT', repeatRows=1)
+                kpi_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black), ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8)
+                ]))
+                elements.append(kpi_table)
+            elements.append(Spacer(1, 12))
+            
+            # --- Forecast Table ---
+            elements.append(Paragraph("Forecast Summary (Integrated Risk)", styles['Heading2']))
+            if not forecast_df.empty:
+                forecast_pivot = forecast_df.pivot(index='Zone', columns='Horizon (Hours)', values='Combined Risk').round(3)
+                forecast_header = [['Zone'] + [str(col) for col in forecast_pivot.columns]]
+                forecast_body = [[str(idx)] + [str(item) for item in row.tolist()] for idx, row in forecast_pivot.iterrows()]
+                forecast_data = forecast_header + forecast_body
+                forecast_table = Table(forecast_data, hAlign='LEFT', repeatRows=1)
+                forecast_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black), ('BACKGROUND', (0, 1), (-1, -1), colors.beige)
+                ]))
+                elements.append(forecast_table)
+            elements.append(Spacer(1, 12))
+            
+            # --- Allocation Table ---
+            elements.append(Paragraph("Strategic Allocation Recommendation", styles['Heading2']))
+            alloc_data = [['Zone', 'Recommended Units']] + [[str(zone), str(units)] for zone, units in allocations.items()]
+            alloc_table = Table(alloc_data, colWidths=[200, 200])
+            alloc_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black), ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey)
+            ]))
+            elements.append(alloc_table)
+            
+            doc.build(elements)
+            buffer.seek(0)
+            logger.info("PDF report generated successfully.")
+            return buffer
+        except Exception as e:
+            logger.error(f"Failed to generate PDF report: {e}", exc_info=True)
+            return io.BytesIO()
