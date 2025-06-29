@@ -189,18 +189,37 @@ class Dashboard:
         st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0), use_container_width=True)
         
         st.divider()
-        
-        st.subheader("Advanced Analytical Plots")
+
+        # --- REDESIGN: Use tabs for a clean, encapsulated, and leak-proof plot section ---
+        st.subheader("Advanced Analytical Visualizations")
+
         if not kpi_df.empty:
-            c1, c2 = st.columns(2)
-            with c1:
+            tab1, tab2, tab3 = st.tabs([
+                "📍 Zone Vulnerability Quadrant", 
+                "📊 Risk Contribution Analysis", 
+                "🔗 KPI Correlation Matrix"
+            ])
+
+            with tab1:
+                st.markdown("""
+                **Analysis:** This plot segments zones based on their long-term structural vulnerability (`GNN_Structural_Risk`) versus their immediate, dynamic risk (`Ensemble Risk Score`). This helps identify latent threats and acute hotspots.
+                """)
+                self._plot_vulnerability_quadrant(kpi_df)
+
+            with tab2:
+                st.markdown("""
+                **Analysis:** This sunburst chart breaks down the final `Integrated_Risk_Score` for the single highest-risk zone, showing the weighted contribution of each analytical layer and sub-component.
+                """)
                 self._plot_risk_contribution_sunburst(kpi_df)
-            with c2:
+
+            with tab3:
+                st.markdown("""
+                **Analysis:** This heatmap shows the Pearson correlation between the advanced KPI scores across all zones. High correlation (dark blue) suggests that different advanced models are identifying similar underlying risk patterns.
+                """)
                 self._plot_advanced_model_correlation(kpi_df)
-            st.divider()
-            self._plot_vulnerability_quadrant(kpi_df)
         else:
             st.info("Insufficient data to generate advanced analytical plots.")
+        # --- END OF REDESIGN ---
         
         st.divider()
         st.subheader("Risk Forecast Visualizer")
@@ -342,28 +361,15 @@ class Dashboard:
                 st.markdown("---")
 
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
-        st.markdown("**Risk Contribution Analysis**")
-        st.help("This sunburst chart breaks down the final `Integrated_Risk_Score` for the highest-risk zone, showing the contribution of each analytical layer.")
-        
         highest_risk_zone = kpi_df.loc[kpi_df['Integrated_Risk_Score'].idxmax()]
         zone_name = highest_risk_zone['Zone']
 
         adv_weights = self.config['model_params'].get('advanced_model_weights', {})
         
         data = {
-            'ids': [
-                'Integrated Risk', 'Base Ensemble', 'Advanced Models', 
-                'STGP', 'HMM', 'GNN', 'Game Theory'
-            ],
-            'labels': [
-                f"Total: {highest_risk_zone['Integrated_Risk_Score']:.2f}", 
-                'Base Ensemble', 'Advanced Models', 
-                'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'
-            ],
-            'parents': [
-                '', 'Integrated Risk', 'Integrated Risk', 
-                'Advanced Models', 'Advanced Models', 'Advanced Models', 'Advanced Models'
-            ],
+            'ids': ['Integrated Risk', 'Base Ensemble', 'Advanced Models', 'STGP', 'HMM', 'GNN', 'Game Theory'],
+            'labels': [f"Total: {highest_risk_zone['Integrated_Risk_Score']:.2f}", 'Base Ensemble', 'Advanced Models', 'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'],
+            'parents': ['', 'Integrated Risk', 'Integrated Risk', 'Advanced Models', 'Advanced Models', 'Advanced Models', 'Advanced Models'],
             'values': [
                 highest_risk_zone['Integrated_Risk_Score'],
                 adv_weights.get('base_ensemble', 0) * highest_risk_zone['Ensemble Risk Score'],
@@ -385,16 +391,13 @@ class Dashboard:
         ))
         fig.update_layout(
             margin = dict(t=20, l=0, r=0, b=0),
-            title_text=f"Risk Breakdown for Zone: {zone_name}",
+            title_text=f"Risk Breakdown for Highest-Risk Zone: {zone_name}",
             title_x=0.5,
-            height=400
+            height=450
         )
         st.plotly_chart(fig, use_container_width=True)
 
     def _plot_advanced_model_correlation(self, kpi_df: pd.DataFrame):
-        st.markdown("**Advanced Model Correlation**")
-        st.help("This heatmap shows the correlation between the advanced KPI scores across all zones. High correlation suggests models are identifying similar underlying risk patterns.")
-        
         advanced_cols = ['STGP_Risk', 'HMM_State_Risk', 'GNN_Structural_Risk', 'Game_Theory_Tension']
         corr_df = kpi_df[advanced_cols].corr()
         
@@ -408,16 +411,13 @@ class Dashboard:
             hoverongaps = False))
         fig.update_layout(
             margin = dict(t=20, l=0, r=0, b=0),
-            height=400,
+            height=450,
             title_text="Correlation Matrix of Advanced KPIs",
             title_x=0.5
         )
         st.plotly_chart(fig, use_container_width=True)
 
     def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
-        st.markdown("**Zone Vulnerability Quadrant Analysis**")
-        st.help("This plot segments zones based on their long-term structural vulnerability versus their immediate real-time risk, identifying latent threats and acute hotspots.")
-
         fig = px.scatter(
             kpi_df,
             x="Ensemble Risk Score",
@@ -450,11 +450,6 @@ class Dashboard:
 def main():
     """Main function to run the application."""
     try:
-        # These imports must be defined within the scope where they are used,
-        # or globally at the top of the file. Assuming they are in other project files.
-        # from core import DataManager, PredictiveAnalyticsEngine
-        # from utils import load_config
-        
         config = load_config()
         data_manager = DataManager(config)
         engine = PredictiveAnalyticsEngine(data_manager, config)
