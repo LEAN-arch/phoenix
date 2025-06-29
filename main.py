@@ -145,12 +145,14 @@ class Dashboard:
 
     def _render_main_dashboard_tab(self, kpi_df, allocations, incidents):
         st.subheader("Current Situational Overview")
-        
+
+        # --- OPTIMIZATION 1: Enhanced KPI Metrics with Icons ---
+        # The original layout was good. Adding icons for better visual cues.
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Active Incidents", len(incidents), help="Number of incidents currently being processed.")
-        c2.metric("Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'), delta_color="off")
-        c3.metric("Highest Zone Risk", f"{kpi_df['Integrated_Risk_Score'].max():.3f}", help="The peak Integrated Risk Score across all zones.")
-        c4.metric("System Adequacy", f"{kpi_df['Resource Adequacy Index'].mean():.1%}", help="Ratio of available units to system-wide expected incidents, penalized by hospital strain.")
+        c1.metric("🚨 Active Incidents", len(incidents), help="Number of incidents currently being processed.")
+        c2.metric("🚑 Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'), delta_color="off", help="Total number of ambulances with status 'Disponible'.")
+        c3.metric("📈 Highest Zone Risk", f"{kpi_df['Integrated_Risk_Score'].max():.3f}", help="The peak Integrated Risk Score across all zones.")
+        c4.metric("📊 System Adequacy", f"{kpi_df['Resource Adequacy Index'].mean():.1%}", help="Ratio of available units to system-wide expected incidents, penalized by hospital strain.")
 
         st.divider()
 
@@ -159,43 +161,92 @@ class Dashboard:
             st.subheader("Live Risk Heatmap")
             self._render_map(kpi_df)
         with col2:
+            # --- OPTIMIZATION 2: Visualizing Allocations with a Bar Chart ---
+            # Replaced the static dataframe with a more intuitive and visually appealing Plotly bar chart.
             st.subheader("Recommended Ambulance Allocation")
-            alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).set_index('Zone')
-            st.dataframe(alloc_df, use_container_width=True)
+            if allocations:
+                alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).sort_values('Recommended Units', ascending=True)
+                fig = px.bar(alloc_df, x='Recommended Units', y='Zone', orientation='h',
+                             title="Units per Zone", text='Recommended Units')
+                fig.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=300, yaxis_title=None)
+                fig.update_traces(textposition='outside', marker_color='#E55451')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No allocation recommendations available.")
             
+            # --- OPTIMIZATION 3: Visualizing Top Risk Zones ---
+            # Replaced the dataframe with a horizontal bar chart for a clearer ranking visualization.
             st.subheader("Top 5 Highest-Risk Zones")
-            top_zones = kpi_df[['Zone', 'Integrated_Risk_Score']].sort_values(by='Integrated_Risk_Score', ascending=False).head(5)
-            st.dataframe(top_zones.set_index('Zone').style.format("{:.3f}"), use_container_width=True)
+            if not kpi_df.empty:
+                top_zones = kpi_df[['Zone', 'Integrated_Risk_Score']].sort_values(by='Integrated_Risk_Score', ascending=False).head(5)
+                fig_top_zones = px.bar(top_zones.sort_values('Integrated_Risk_Score', ascending=True),
+                                       x='Integrated_Risk_Score', y='Zone', orientation='h',
+                                       text='Integrated_Risk_Score',
+                                       title="Highest Risk Scores by Zone")
+                fig_top_zones.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=250, yaxis_title=None, xaxis_title="Integrated Risk Score")
+                fig_top_zones.update_traces(texttemplate='%{text:.3f}', textposition='outside', marker_color='#AF4035')
+                st.plotly_chart(fig_top_zones, use_container_width=True)
+            else:
+                st.info("No risk data to display.")
 
     def _render_kpi_deep_dive_tab(self, kpi_df, forecast_df):
         st.subheader("Comprehensive Risk Indicator Matrix")
-        st.markdown("This table shows the complete set of calculated KPIs for each zone, including base, ensemble, and advanced model outputs.")
-        st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0))
+        st.markdown("This table shows the complete set of calculated KPIs for each zone. Sort columns by clicking headers.")
+        # The dataframe with background gradient is the best tool for this density of data. Kept as is.
+        st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0), use_container_width=True)
         
         st.divider()
         
-        # --- EXPANSION: NEW SECTION FOR ADVANCED VISUALIZATIONS ---
         st.subheader("Advanced Analytical Plots")
-        
         if not kpi_df.empty:
             c1, c2 = st.columns(2)
             with c1:
                 self._plot_risk_contribution_sunburst(kpi_df)
             with c2:
                 self._plot_advanced_model_correlation(kpi_df)
-            
             st.divider()
             self._plot_vulnerability_quadrant(kpi_df)
         else:
             st.info("Insufficient data to generate advanced analytical plots.")
-        # --- END OF EXPANSION ---
         
         st.divider()
-        st.subheader("Risk Forecast by Zone")
-        st.markdown("Projected `Integrated_Risk_Score` over the next 72 hours.")
+        st.subheader("Risk Forecast Visualizer")
+        
+        # --- OPTIMIZATION 4: Interactive Forecast Chart ---
+        # Added an interactive line chart to visualize forecasts, making trends easier to spot than a static table.
         if not forecast_df.empty:
-            forecast_pivot = forecast_df.pivot(index='Zone', columns='Horizon (Hours)', values='Combined Risk')
-            st.dataframe(forecast_pivot.style.format("{:.3f}").background_gradient(cmap='YlOrRd', axis=1), use_container_width=True)
+            all_zones = forecast_df['Zone'].unique().tolist()
+            # Select the top 5 riskiest zones by default for a clean initial view
+            default_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
+            
+            selected_zones = st.multiselect(
+                "Select zones to visualize forecast:",
+                options=all_zones,
+                default=default_zones
+            )
+
+            if selected_zones:
+                forecast_to_plot = forecast_df[forecast_df['Zone'].isin(selected_zones)]
+                fig = px.line(
+                    forecast_to_plot,
+                    x='Horizon (Hours)',
+                    y='Combined Risk',
+                    color='Zone',
+                    title='72-Hour Risk Forecast',
+                    labels={'Combined Risk': 'Projected Integrated Risk Score'},
+                    markers=True
+                )
+                fig.update_layout(legend_title_text='Zone')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Select one or more zones to display the forecast.")
+
+            with st.expander("View Raw Forecast Data"):
+                st.markdown("Projected `Integrated_Risk_Score` over the next 72 hours.")
+                forecast_pivot = forecast_df.pivot(index='Zone', columns='Horizon (Hours)', values='Combined Risk')
+                st.dataframe(forecast_pivot.style.format("{:.3f}").background_gradient(cmap='YlOrRd', axis=1), use_container_width=True)
+        else:
+            st.warning("Forecast data is not available.")
 
     def _render_map(self, kpi_df):
         if self.dm.zones_gdf.empty or kpi_df.empty: return
@@ -224,93 +275,85 @@ class Dashboard:
 
     def _render_methodology_tab(self):
         st.header("System Architecture & Methodology")
-        st.markdown("""
-        ### I. High-Level Goal & Architectural Philosophy
+        st.markdown("Explore the foundational principles, models, and metrics that power the Phoenix v4.0 engine.")
 
-        The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** (dispatching units after an incident occurs) to a **proactive, predictive posture** (anticipating where incidents are likely to emerge and pre-positioning resources to minimize response times and maximize impact).
-
-        To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others, generating a final prediction that represents a true "wisdom of the crowds."
-
-        The system architecture is composed of three primary analytical layers:
-
-        1.  **Layer 1: Foundational Ensemble.** This layer consists of well-established statistical and first-principle models (Hawkes Processes, SIR, Bayesian Networks, Graph Laplacians) that create a robust baseline understanding of risk. This produces the `Ensemble_Risk_Score`.
-        2.  **Layer 2: Advanced AI & Complexity Proxies.** This layer introduces computationally inexpensive but analytically powerful proxies for cutting-edge AI and complexity science models (ST-GPs, HMMs, GNNs, Game Theory). These models capture deeper, more nuanced patterns that complement the foundational layer.
-        3.  **Layer 3: Integrated Synthesis.** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`, which drives the system's final recommendations.
-
-        ---
-
-        ### II. Detailed Methodology Breakdown
-
-        This section details the theoretical underpinnings of the models and techniques that power the Phoenix v4.0 engine.
-
-        #### **I. Stochastic & Statistical Modeling**
-
-        *   **Non-Homogeneous Poisson Process (NHPP):** Used to model the baseline incident rate (`μ`). Unlike a standard Poisson process with a constant rate, the NHPP allows this rate to vary over time, capturing predictable patterns like higher call volumes during evening rush hour versus midday.
-        *   **Hawkes Process (Self-Exciting):** This is the core of our trauma and violence clustering models. It assumes that some events can trigger "aftershocks."
-            > *Mathematical Intuition:* `λ(t) = μ(t) + Σ α * exp[-β(t-tᵢ)]`
-            > The incident rate `λ(t)` at time `t` is the sum of the time-varying baseline `μ(t)` and the decaying influence `exp[...]` of every past incident `tᵢ`.
-            > *Significance:* Answers the question: *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* It's crucial for modeling gang-related violence and cascading traffic accidents.
-        *   **Marked Point Processes:** The system implicitly uses this concept by treating each incident not just as a point in time and space, but as a "marked" event with metadata (e.g., `type: 'Trauma-Accident'`, `triage: 'Red'`). This allows different models to respond selectively to different types of marks.
-
-        #### **II. Spatiotemporal & Graph Models**
-
-        *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this technique. A full ST-GP would model incident intensity as a continuous function over space and time, providing robust predictions with confidence bounds even in areas with no data.
-            > *Significance:* Answers the question: *"What is the likely risk in this park, which is 1km away from a major incident, even if no calls have come from the park itself?"* It interpolates risk intelligently across the map.
-        *   **Dynamic Spatial Graphs / Graph Laplacians:** The `Spatial Spillover Risk` KPI is a direct implementation of this. The city's road network is treated as a graph, and the Graph Laplacian matrix is used to model the diffusion of risk from one zone to its neighbors, simulating how traffic or chaos can spread.
-        *   **Graph Neural Networks (GNNs):** Our `GNN_Structural_Risk` KPI is a proxy for a GNN. A full GNN would learn a dense vector representation (embedding) for each zone based on its structural properties and incident history.
-            > *Significance:* Identifies zones that are inherently vulnerable due to their position in the network (e.g., a central hub with many connections), regardless of recent incident history. It represents a deep, structural understanding of the urban environment.
-
-        #### **III. Deep Learning Architectures**
-
-        *   **Temporal Convolutional Networks (TCNs):** The system is equipped with a TCNN module. TCNs use convolutions over time, allowing them to capture long-range temporal patterns with high stability and efficiency, making them ideal for high-resolution time-series forecasting.
-        *   **Other Architectures (Conceptual):** While not all implemented as full models, the system's architecture is designed to incorporate proxies or future versions of:
-            *   **Transformers (e.g., TimeGPT):** For very long-range forecasting (e.g., weekly or monthly trends).
-            *   **ConvLSTM / 3D CNNs:** To predict the evolution of a 2D risk heatmap over time.
-            *   **Variational Autoencoders (VAEs):** To learn the "latent language" of incident patterns, ideal for detecting highly unusual, never-before-seen anomaly types.
-
-        #### **IV. Hybrid & Adaptive Systems**
-
-        *   **Bayesian Deep Learning:** The combination of a statistical Bayesian Network with a Deep Learning TCNN is a form of Bayesian Deep Learning, blending probabilistic reasoning with high-dimensional feature extraction.
-        *   **Concept Drift Adaptation:** The system is designed to handle concept drift. By allowing a user to upload new historical data, the models can be implicitly retrained and re-cached, adapting to fundamental shifts in urban dynamics (e.g., post-pandemic traffic patterns).
-
-        #### **V. Chaos Theory & Complexity Science**
-
-        *   **Lyapunov Exponents:** The `Chaos Sensitivity Score` is a direct proxy for this. It measures the system's sensitivity to initial conditions.
-            > *Significance:* It is an "instability alarm." A high score doesn't predict a specific incident, but it warns command staff that the entire system is in a fragile, unpredictable state where a small event could cascade into a major crisis.
-        *   **Agent-Based Modeling (ABM):** The `Game_Theory_Tension` KPI is a macro-level outcome of what an ABM would simulate. An ABM would model individual agents (ambulances, cars, people) and their interactions, from which competitive bottlenecks for resources emerge.
-
-        #### **VI. Information Theory**
-
-        *   **Shannon Entropy (`Risk Entropy`):** Quantifies the level of disorder or uncertainty in the spatial distribution of risk. A low entropy value is desirable, indicating that risk is concentrated in predictable "hotspots." High entropy means risk is spread thinly and evenly, making resource allocation more difficult.
-        *   **Kullback-Leibler (KL) Divergence (`Anomaly Score`):** Measures how much the current incident distribution `P(x)` diverges from the historical baseline `Q(x)`.
-            > *Significance:* It detects "pattern anomalies." It answers: *"Are we seeing the right types of incidents, but just in the wrong places today?"* A high score indicates that the city is behaving unusually.
-        *   **Mutual Information (`Information Value Index`):** This KPI is a proxy for mutual information. It quantifies how much "information" the current risk map provides for making a decision. A high value (high standard deviation between zone risks) means there are clear high-risk and low-risk zones, making the decision of where to send resources easy and impactful. A low value means all zones have similar risk, and the prediction is less valuable for differentiating.
-
-        #### **VII. Simulation, Optimization, and Strategic Layers**
-
-        *   **Game Theory Models:** The `Game_Theory_Tension` KPI is a proxy for this. It models the city as a non-cooperative game where each zone "competes" for a finite pool of EMS resources. A high tension score for a zone means it is a major driver of resource competition.
-        *   **Operational Research Models:** The final allocation algorithm is a direct application of operational research principles. It is a **proportional risk allocation** strategy that optimally distributes a fixed number of assets (`N` ambulances) across a set of targets (zones) based on their weighted risk scores, solving a classic resource optimization problem.
+        # --- OPTIMIZATION 5: Restructuring Methodology with Expanders for Readability ---
+        # The wall of text is broken into digestible, collapsible sections.
         
-        ---
+        with st.expander("🏛️ I. High-Level Goal & Architectural Philosophy", expanded=True):
+            st.markdown("""
+            The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** to a **proactive, predictive posture**. We anticipate where incidents will likely emerge and pre-position resources to minimize response times and maximize impact.
 
-        ### **III. Key Performance Indicator (KPI) Glossary**
+            To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
 
-        *   **Incident Probability:** The baseline probability (0-1) of an incident occurring in a zone, primarily driven by the Bayesian Network and environmental factors.
-        *   **Expected Incident Volume:** A Poisson-based estimate of the *number* of incidents to expect in a zone over a short time horizon.
-        *   **Risk Entropy:** Measures the *uncertainty* of the spatial risk distribution. High entropy = unpredictable risk. Low entropy = concentrated hotspots.
-        *   **Anomaly Score:** Measures the "strangeness" of the current incident pattern compared to history. High score = "Today is not a normal day."
-        *   **Spatial Spillover Risk:** Risk "leaking" from neighboring zones, based on the Graph Laplacian.
-        *   **Resource Adequacy Index:** Ratio of available ambulances to system-wide expected demand, penalized by hospital strain.
-        *   **Chaos Sensitivity Score:** Measures system volatility and fragility. High score = "The system is unstable."
-        *   **Bayesian Confidence Score:** How certain the Bayesian Network is about its predictions.
-        *   **Information Value Index:** How "actionable" the current risk map is. High value = clear hotspots.
-        *   **STGP Risk:** (Advanced) Risk from proximity to recent, severe incidents.
-        *   **HMM State Risk:** (Advanced) Risk from being in a latent "Agitated" or "Critical" state.
-        *   **GNN Structural Risk:** (Advanced) A zone's intrinsic vulnerability due to its position in the road network.
-        *   **Game Theory Tension:** (Advanced) A measure of a zone's contribution to resource competition.
-        *   **Ensemble Risk Score:** The blended risk score from the foundational (Layer 1) models.
-        *   **Integrated Risk Score:** The ultimate, final risk metric, combining the Ensemble score with all Advanced AI & Complexity KPIs. **This is the primary score used for forecasting and allocation.**
-        """)
+            #### The Three Analytical Layers:
+            1.  **LAYER 1: Foundational Ensemble.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks) that create a robust baseline understanding of risk, producing the `Ensemble_Risk_Score`.
+            2.  **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, GNNs, Game Theory) to capture deeper, nuanced patterns.
+            3.  **LAYER 3: Integrated Synthesis.** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`, which drives all final recommendations.
+            """)
+
+        with st.expander("🧠 II. Detailed Methodology Breakdown", expanded=False):
+            st.info("**Core Concept:** Each model answers a different, specific question about risk. Their combined insights create a holistic view.", icon="💡")
+            
+            st.markdown("#### **I. Stochastic & Statistical Modeling**")
+            st.write("""
+            - **Non-Homogeneous Poisson Process (NHPP):** Models the time-varying baseline incident rate (`μ`), capturing predictable daily and weekly patterns.
+            - **Hawkes Process (Self-Exciting):** The core of our trauma/violence clustering models. It assumes some events can trigger "aftershocks."
+                > *Mathematical Intuition:* `λ(t) = μ(t) + Σ α * exp[-β(t-tᵢ)]`. The rate `λ(t)` is the baseline `μ(t)` plus the decaying influence of every past incident `tᵢ`.
+                > **Significance:** Answers: *"Given a shooting, what is the immediate, elevated risk of another shooting nearby?"*
+            - **Marked Point Processes:** Each incident is treated as a "marked" event with metadata (e.g., `type: 'Trauma'`), allowing models to respond selectively.
+            """)
+            
+            st.markdown("#### **II. Spatiotemporal & Graph Models**")
+            st.write("""
+            - **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` is a proxy. It interpolates risk intelligently across the map, even in areas with no data.
+            - **Graph Laplacians (`Spatial Spillover Risk`):** Models the city's road network as a graph to simulate how risk and chaos can diffuse from one zone to its neighbors.
+            - **Graph Neural Networks (GNNs):** Our `GNN_Structural_Risk` is a proxy. A GNN learns a zone's inherent vulnerability based on its position in the network (e.g., a central hub), independent of recent events.
+            """)
+            
+            st.markdown("#### **III. Deep Learning, Chaos Theory & Information Theory**")
+            st.write("""
+            - **Temporal Convolutional Networks (TCNs):** Used for high-resolution time-series forecasting due to their ability to capture long-range temporal patterns efficiently.
+            - **Lyapunov Exponents (`Chaos Sensitivity Score`):** An "instability alarm." A high score warns that the system is in a fragile state where a small event could cascade into a major crisis.
+            - **Shannon Entropy (`Risk Entropy`):** Quantifies disorder. Low entropy is good (risk is in predictable hotspots). High entropy is bad (risk is spread thinly, making allocation hard).
+            - **KL Divergence (`Anomaly Score`):** Measures how much the current incident pattern diverges from the historical baseline. A high score means "today is not a normal day."
+            """)
+            
+            st.markdown("#### **IV. Optimization & Strategic Layers**")
+            st.write("""
+            - **Game Theory Models (`Game_Theory_Tension`):** Models the city as a non-cooperative game where zones "compete" for EMS resources. High tension means a zone is a major driver of resource competition.
+            - **Operational Research Models:** The final allocation algorithm uses a **proportional risk allocation** strategy to optimally distribute a fixed number of assets based on their weighted risk scores.
+            """)
+            
+        with st.expander("📖 III. Key Performance Indicator (KPI) Glossary", expanded=False):
+            # --- OPTIMIZATION 6: Using columns for a scannable glossary ---
+            st.markdown("These are the core metrics calculated by the Phoenix engine.")
+            
+            kpi_defs = {
+                "Integrated Risk Score": "**The final, primary risk metric** used for all decisions, blending foundational and advanced AI models.",
+                "Ensemble Risk Score": "Blended risk score from the foundational (Layer 1) statistical models.",
+                "Incident Probability": "Baseline probability (0-1) of an incident, driven by the Bayesian Network.",
+                "Expected Incident Volume": "Estimated *number* of incidents to expect in a short time horizon.",
+                "Spatial Spillover Risk": "Risk 'leaking' from neighboring zones, based on the Graph Laplacian.",
+                "GNN Structural Risk": "A zone's intrinsic vulnerability due to its position in the road network.",
+                "STGP Risk": "Risk from proximity to recent, severe incidents (spatiotemporal correlation).",
+                "HMM State Risk": "Risk from the zone being in a latent 'Agitated' or 'Critical' state.",
+                "Game Theory Tension": "A measure of a zone's contribution to system-wide resource competition.",
+                "Chaos Sensitivity Score": "Measures system volatility and fragility. High score = 'The system is unstable.'",
+                "Anomaly Score": "Measures the 'strangeness' of the current incident pattern compared to history.",
+                "Risk Entropy": "Measures the *uncertainty* of the spatial risk distribution. High entropy = unpredictable.",
+                "Information Value Index": "How 'actionable' the risk map is. High value = clear, differentiable hotspots.",
+                "Bayesian Confidence Score": "How certain the Bayesian Network is about its predictions.",
+                "Resource Adequacy Index": "System-wide ratio of available units to expected demand, penalized by hospital strain."
+            }
+
+            for kpi, definition in kpi_defs.items():
+                c1, c2 = st.columns([1, 3])
+                with c1:
+                    st.markdown(f"**{kpi}**")
+                with c2:
+                    st.markdown(definition)
+                st.markdown("---")
 
     # --- EXPANSION: NEW PLOTTING METHODS ADDED TO THE CLASS ---
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
