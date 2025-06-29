@@ -8,9 +8,9 @@ from datetime import datetime
 import logging
 import warnings
 from pathlib import Path
-# --- EXPANSION: Import Plotly for advanced visualizations ---
 import plotly.express as px
 import plotly.graph_objects as go
+from typing import Tuple
 
 # Import from our refactored modules
 from core import DataManager, PredictiveAnalyticsEngine, EnvFactors
@@ -67,7 +67,6 @@ class Dashboard:
         st.session_state['forecast_df'] = forecast_df
         st.session_state['allocations'] = allocations
 
-        # --- UI OVERHAUL: Use tabs for a clean, organized interface ---
         tab1, tab2, tab3 = st.tabs(["🔥 Operational Dashboard", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
 
         with tab1:
@@ -174,21 +173,28 @@ class Dashboard:
         
         st.divider()
         
-        # --- EXPANSION: NEW SECTION FOR ADVANCED VISUALIZATIONS ---
         st.subheader("Advanced Analytical Plots")
         
         if not kpi_df.empty:
             c1, c2 = st.columns(2)
             with c1:
-                self._plot_risk_contribution_sunburst(kpi_df)
+                title, help_text, fig = self._plot_risk_contribution_sunburst(kpi_df)
+                st.markdown(f"**{title}**")
+                st.help(help_text)
+                st.plotly_chart(fig, use_container_width=True)
             with c2:
-                self._plot_advanced_model_correlation(kpi_df)
+                title, help_text, fig = self._plot_advanced_model_correlation(kpi_df)
+                st.markdown(f"**{title}**")
+                st.help(help_text)
+                st.plotly_chart(fig, use_container_width=True)
             
             st.divider()
-            self._plot_vulnerability_quadrant(kpi_df)
+            title, help_text, fig = self._plot_vulnerability_quadrant(kpi_df)
+            st.markdown(f"**{title}**")
+            st.help(help_text)
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Insufficient data to generate advanced analytical plots.")
-        # --- END OF EXPANSION ---
         
         st.divider()
         st.subheader("Risk Forecast by Zone")
@@ -312,10 +318,9 @@ class Dashboard:
         *   **Integrated Risk Score:** The ultimate, final risk metric, combining the Ensemble score with all Advanced AI & Complexity KPIs. **This is the primary score used for forecasting and allocation.**
         """)
 
-    # --- EXPANSION: NEW PLOTTING METHODS ADDED TO THE CLASS ---
-    def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
-        st.markdown("**Risk Contribution Analysis**")
-        st.help("This sunburst chart breaks down the final `Integrated_Risk_Score` for the highest-risk zone, showing the contribution of each analytical layer.")
+    def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame) -> Tuple[str, str, go.Figure]:
+        title = "Risk Contribution Analysis"
+        help_text = "This sunburst chart breaks down the final `Integrated_Risk_Score` for the highest-risk zone, showing the contribution of each analytical layer."
         
         highest_risk_zone = kpi_df.loc[kpi_df['Integrated_Risk_Score'].idxmax()]
         zone_name = highest_risk_zone['Zone']
@@ -323,101 +328,61 @@ class Dashboard:
         adv_weights = self.config['model_params'].get('advanced_model_weights', {})
         
         data = {
-            'ids': [
-                'Integrated Risk', 'Base Ensemble', 'Advanced Models', 
-                'STGP', 'HMM', 'GNN', 'Game Theory'
-            ],
-            'labels': [
-                f"Total: {highest_risk_zone['Integrated_Risk_Score']:.2f}", 
-                'Base Ensemble', 'Advanced Models', 
-                'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'
-            ],
-            'parents': [
-                '', 'Integrated Risk', 'Integrated Risk', 
-                'Advanced Models', 'Advanced Models', 'Advanced Models', 'Advanced Models'
-            ],
+            'ids': ['Integrated Risk', 'Base Ensemble', 'Advanced Models', 'STGP', 'HMM', 'GNN', 'Game Theory'],
+            'labels': [f"Total: {highest_risk_zone['Integrated_Risk_Score']:.2f}", 'Base Ensemble', 'Advanced Models', 'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'],
+            'parents': ['', 'Integrated Risk', 'Integrated Risk', 'Advanced Models', 'Advanced Models', 'Advanced Models', 'Advanced Models'],
             'values': [
                 highest_risk_zone['Integrated_Risk_Score'],
-                adv_weights.get('base_ensemble', 0) * highest_risk_zone['Ensemble Risk Score'],
-                (adv_weights.get('stgp', 0) * highest_risk_zone['STGP_Risk'] +
-                 adv_weights.get('hmm', 0) * highest_risk_zone['HMM_State_Risk'] +
-                 adv_weights.get('gnn', 0) * highest_risk_zone['GNN_Structural_Risk'] +
-                 adv_weights.get('game_theory', 0) * highest_risk_zone['Game_Theory_Tension']),
-                adv_weights.get('stgp', 0) * highest_risk_zone['STGP_Risk'],
-                adv_weights.get('hmm', 0) * highest_risk_zone['HMM_State_Risk'],
-                adv_weights.get('gnn', 0) * highest_risk_zone['GNN_Structural_Risk'],
-                adv_weights.get('game_theory', 0) * highest_risk_zone['Game_Theory_Tension']
+                adv_weights.get('base_ensemble', 0) * highest_risk_zone.get('Ensemble Risk Score', 0),
+                (adv_weights.get('stgp', 0) * highest_risk_zone.get('STGP_Risk', 0) +
+                 adv_weights.get('hmm', 0) * highest_risk_zone.get('HMM_State_Risk', 0) +
+                 adv_weights.get('gnn', 0) * highest_risk_zone.get('GNN_Structural_Risk', 0) +
+                 adv_weights.get('game_theory', 0) * highest_risk_zone.get('Game_Theory_Tension', 0)),
+                adv_weights.get('stgp', 0) * highest_risk_zone.get('STGP_Risk', 0),
+                adv_weights.get('hmm', 0) * highest_risk_zone.get('HMM_State_Risk', 0),
+                adv_weights.get('gnn', 0) * highest_risk_zone.get('GNN_Structural_Risk', 0),
+                adv_weights.get('game_theory', 0) * highest_risk_zone.get('Game_Theory_Tension', 0)
             ]
         }
-
         fig = go.Figure(go.Sunburst(
             ids=data['ids'], labels=data['labels'], parents=data['parents'], 
             values=data['values'], branchvalues="total",
             hovertemplate='<b>%{label}</b><br>Contribution: %{value:.3f}<extra></extra>',
         ))
-        fig.update_layout(
-            margin = dict(t=20, l=0, r=0, b=0),
-            title_text=f"Risk Breakdown for Zone: {zone_name}",
-            title_x=0.5,
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), title_text=f"Risk Breakdown for Zone: {zone_name}", title_x=0.5, height=400)
+        return title, help_text, fig
 
-    def _plot_advanced_model_correlation(self, kpi_df: pd.DataFrame):
-        st.markdown("**Advanced Model Correlation**")
-        st.help("This heatmap shows the correlation between the advanced KPI scores across all zones. High correlation suggests models are identifying similar underlying risk patterns.")
+    def _plot_advanced_model_correlation(self, kpi_df: pd.DataFrame) -> Tuple[str, str, go.Figure]:
+        title = "Advanced Model Correlation"
+        help_text = "This heatmap shows the correlation between the advanced KPI scores across all zones. High correlation suggests models are identifying similar underlying risk patterns."
         
         advanced_cols = ['STGP_Risk', 'HMM_State_Risk', 'GNN_Structural_Risk', 'Game_Theory_Tension']
         corr_df = kpi_df[advanced_cols].corr()
         
         fig = go.Figure(data=go.Heatmap(
-            z=corr_df.values,
-            x=corr_df.columns,
-            y=corr_df.columns,
-            colorscale='Blues',
-            text=corr_df.values,
-            texttemplate="%{text:.2f}",
-            hoverongaps = False))
-        fig.update_layout(
-            margin = dict(t=20, l=0, r=0, b=0),
-            height=400,
-            title_text="Correlation Matrix of Advanced KPIs",
-            title_x=0.5
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            z=corr_df.values, x=corr_df.columns, y=corr_df.columns,
+            colorscale='Blues', text=corr_df.values, texttemplate="%{text:.2f}", hoverongaps = False))
+        fig.update_layout(margin=dict(t=20, l=0, r=0, b=0), height=400, title_text="Correlation Matrix of Advanced KPIs", title_x=0.5)
+        return title, help_text, fig
 
-    def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
-        st.markdown("**Zone Vulnerability Quadrant Analysis**")
-        st.help("This plot segments zones based on their long-term structural vulnerability versus their immediate real-time risk, identifying latent threats and acute hotspots.")
+    def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame) -> Tuple[str, str, go.Figure]:
+        title = "Zone Vulnerability Quadrant Analysis"
+        help_text = "This plot segments zones based on their long-term structural vulnerability versus their immediate real-time risk, identifying latent threats and acute hotspots."
 
         fig = px.scatter(
-            kpi_df,
-            x="Ensemble Risk Score",
-            y="GNN_Structural_Risk",
-            color="Integrated_Risk_Score",
-            size="Expected Incident Volume",
-            hover_name="Zone",
-            color_continuous_scale="reds",
-            size_max=18
+            kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk",
+            color="Integrated_Risk_Score", size="Expected Incident Volume",
+            hover_name="Zone", color_continuous_scale="reds", size_max=18
         )
-        
-        x_mean = kpi_df['Ensemble Risk Score'].mean()
-        y_mean = kpi_df['GNN_Structural_Risk'].mean()
-        
+        x_mean = kpi_df['Ensemble Risk Score'].mean(); y_mean = kpi_df['GNN_Structural_Risk'].mean()
         fig.add_vline(x=x_mean, line_width=1, line_dash="dash", line_color="grey")
         fig.add_hline(y=y_mean, line_width=1, line_dash="dash", line_color="grey")
-        
         fig.add_annotation(x=x_mean/2, y=y_mean*1.8 if y_mean > 0 else 0.8, text="<b>Latent Threats</b><br>(High Vulnerability, Low Risk)", showarrow=False, font=dict(color="navy"))
         fig.add_annotation(x=x_mean*1.5 if x_mean > 0 else 0.8, y=y_mean*1.8 if y_mean > 0 else 0.8, text="<b>Crisis Zones</b><br>(High Vulnerability, High Risk)", showarrow=False, font=dict(color="red"))
         fig.add_annotation(x=x_mean*1.5 if x_mean > 0 else 0.8, y=y_mean/2, text="<b>Acute Hotspots</b><br>(Low Vulnerability, High Risk)", showarrow=False, font=dict(color="darkorange"))
         fig.add_annotation(x=x_mean/2, y=y_mean/2, text="<b>Quiet Zones</b>", showarrow=False, font=dict(color="green"))
-        
-        fig.update_layout(
-            xaxis_title="Dynamic Risk (Real-time Threat)",
-            yaxis_title="Structural Vulnerability (Intrinsic Threat)",
-            coloraxis_colorbar_title_text='Integrated<br>Risk'
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(xaxis_title="Dynamic Risk (Real-time Threat)", yaxis_title="Structural Vulnerability (Intrinsic Threat)", coloraxis_colorbar_title_text='Integrated<br>Risk')
+        return title, help_text, fig
 
 def main():
     """Main function to run the application."""
