@@ -46,27 +46,17 @@ class Dashboard:
             
         if 'env_factors' not in st.session_state:
             avg_pop_density = self.dm.zones_gdf['population'].mean() if not self.dm.zones_gdf.empty else 50000
-            st.session_state['env_factors'] = EnvFactors(
-                is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, 
-                population_density=avg_pop_density, air_quality_index=50.0, heatwave_alert=False,
-                day_type='Weekday', time_of_day='Midday', public_event_type='None',
-                hospital_divert_status=0.0, police_activity='Normal', school_in_session=True
-            )
+            st.session_state['env_factors'] = EnvFactors(is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, population_density=avg_pop_density, air_quality_index=50.0, heatwave_alert=False, day_type='Weekday', time_of_day='Midday', public_event_type='None', hospital_divert_status=0.0, police_activity='Normal', school_in_session=True)
 
     def render(self):
-        """Main rendering loop for the Streamlit application."""
         st.title("RedShield AI: Phoenix v4.0")
         st.markdown("##### Proactive Emergency Response & Resource Allocation Platform")
-
         self._render_sidebar()
-
         env_factors = st.session_state['env_factors']
         historical_data = st.session_state['historical_data']
 
         with st.spinner("Executing Advanced Analytics & Optimization Pipeline..."):
             current_incidents = self.dm.get_current_incidents(env_factors)
-            # NOTE: Your `core.py`'s generate_kpis_with_sparklines must be updated to return a dict for each KPI 
-            # with two keys: 'values' (a list) and 'range' (a list of [min, max]).
             kpi_df, sparkline_data = self.engine.generate_kpis_with_sparklines(historical_data, env_factors, current_incidents)
             forecast_df = self.engine.generate_forecast(kpi_df)
             allocations = self.engine.generate_allocation_recommendations(kpi_df)
@@ -76,11 +66,9 @@ class Dashboard:
             'sparkline_data': sparkline_data
         })
 
-        # Updated Tab Name
         tab1, tab2, tab3 = st.tabs(["🔥 Operational Command", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
 
         with tab1:
-            # Replaced call to the new, enhanced tab rendering method
             self._render_operational_command_tab(kpi_df, allocations, current_incidents)
         with tab2:
             self._render_kpi_deep_dive_tab(kpi_df, forecast_df)
@@ -90,7 +78,6 @@ class Dashboard:
     def _plot_kpi_health_gauge(self, data, normal_range, title, color_map, unit=""):
         fig = go.Figure()
         
-        # 1. Add normal operating range band
         fig.add_trace(go.Scatter(
             x=list(range(len(data))),
             y=[normal_range[1]] * len(data),
@@ -105,7 +92,6 @@ class Dashboard:
             name='Normal Range', showlegend=False
         ))
         
-        # 2. Add the main metric line with dynamic color
         current_val = data[-1]
         if current_val > normal_range[1]:
             line_color = color_map['high']
@@ -245,13 +231,14 @@ class Dashboard:
                 return 2.0
 
             hotspot_fg = folium.FeatureGroup(name='Risk Hotspots', show=True)
+            # FIX IS APPLIED IN THIS LOOP
             for idx, row in kpi_df[kpi_df['Integrated_Risk_Score'] > 0.5].iterrows():
                 pulse_duration = get_pulse_duration(row['Chaos Sensitivity Score'])
                 folium.CircleMarker(
-                    location=[row.geometry.centroid.y, row.geometry.centroid.x],
+                    location=[row['geometry'].centroid.y, row['geometry'].centroid.x],
                     radius=row['Integrated_Risk_Score'] * 20,
                     color=px.colors.sequential.YlOrRd[-1], fill=True, fill_color=px.colors.sequential.YlOrRd[-2], fill_opacity=0.6,
-                    tooltip=f"<b>Zone: {row.name}</b><br>Risk: {row.Integrated_Risk_Score:.3f}<br>Chaos: {row.Chaos Sensitivity Score:.3f}",
+                    tooltip=f"<b>Zone: {row['Zone']}</b><br>Risk: {row['Integrated_Risk_Score']:.3f}<br>Chaos: {row['Chaos Sensitivity Score']:.3f}",
                     popup=f"<div style='animation: pulse {pulse_duration}s infinite;'></div>" # CSS pulse
                 ).add_to(hotspot_fg)
             hotspot_fg.add_to(m)
@@ -273,7 +260,7 @@ class Dashboard:
         except Exception as e:
             logger.error(f"Failed to render dynamic map: {e}", exc_info=True)
             st.error(f"Error rendering dynamic map: {e}")
-
+            
     def _render_sidebar(self):
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
@@ -471,3 +458,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+   
