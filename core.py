@@ -255,26 +255,46 @@ class PredictiveAnalyticsEngine:
 
         return kpi_df.fillna(0).reset_index().rename(columns={'index': 'Zone'})
 
-    def generate_kpis_with_sparklines(self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> (pd.DataFrame, Dict[str, List[float]]):
+    # --- START: THIS IS THE CORRECTED METHOD ---
+    def generate_kpis_with_sparklines(self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> (pd.DataFrame, Dict[str, Dict]):
+        """
+        Wrapper method that generates KPIs and also creates simulated historical trend
+        data, including a normal operating range, for the sophisticated health gauge visualizations.
+        THIS IS THE FIX: This method now returns a nested dictionary as expected by main.py.
+        """
         kpi_df = self.generate_kpis(historical_data, env_factors, current_incidents)
         sparkline_data = {}
+
+        # Helper function to create the nested dictionary structure
+        def create_gauge_data(current_value, history_generator):
+            values = np.append(history_generator, current_value).tolist()
+            # In a real system, this range would be based on true historical percentiles
+            p10 = np.percentile(values, 10)
+            p90 = np.percentile(values, 90)
+            return {'values': values, 'range': [p10, p90]}
+
+        # Generate data for 'Active Incidents'
         current_incidents_count = len(current_incidents)
-        incidents_trend = np.random.randn(23) * 2 + np.sin(np.linspace(0, np.pi, 23)) * 3
-        incidents_history = np.clip(current_incidents_count + incidents_trend, 0, None).astype(int)
-        sparkline_data['active_incidents'] = np.append(incidents_history, current_incidents_count).tolist()
+        incidents_history = np.clip(current_incidents_count + np.random.randn(23) * 2 + np.sin(np.linspace(0, np.pi, 23)) * 3, 0, None).astype(int)
+        sparkline_data['active_incidents'] = create_gauge_data(current_incidents_count, incidents_history)
+
+        # Generate data for 'Available Ambulances'
         current_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-        ambulances_trend = np.random.randn(23)
-        ambulances_history = np.clip(current_ambulances + ambulances_trend, 0, None).astype(int)
-        sparkline_data['available_ambulances'] = np.append(ambulances_history, current_ambulances).tolist()
+        ambulances_history = np.clip(current_ambulances + np.random.randn(23), 0, None).astype(int)
+        sparkline_data['available_ambulances'] = create_gauge_data(current_ambulances, ambulances_history)
+        
+        # Generate data for 'Highest Zone Risk'
         current_max_risk = kpi_df['Integrated_Risk_Score'].max()
-        risk_trend = np.random.randn(23) * 0.05
-        risk_history = np.clip(current_max_risk + risk_trend, 0, 1)
-        sparkline_data['max_risk'] = np.append(risk_history, current_max_risk).tolist()
+        risk_history = np.clip(current_max_risk + np.random.randn(23) * 0.05, 0, 1)
+        sparkline_data['max_risk'] = create_gauge_data(current_max_risk, risk_history)
+        
+        # Generate data for 'System Adequacy'
         current_adequacy = kpi_df['Resource Adequacy Index'].mean()
-        adequacy_trend = np.random.randn(23) * 0.03
-        adequacy_history = np.clip(current_adequacy + adequacy_trend, 0, 1)
-        sparkline_data['adequacy'] = np.append(adequacy_history, current_adequacy).tolist()
+        adequacy_history = np.clip(current_adequacy + np.random.randn(23) * 0.03, 0, 1)
+        sparkline_data['adequacy'] = create_gauge_data(current_adequacy, adequacy_history)
+
         return kpi_df, sparkline_data
+    # --- END: CORRECTED METHOD ---
         
     def _calculate_lyapunov_exponent(_self, historical_data: List[Dict]) -> float:
         if len(historical_data) < 2: return 0.0
@@ -337,7 +357,6 @@ class PredictiveAnalyticsEngine:
         return self.forecast_df
         
     def _post_process_allocations(self, allocations: Dict[str, Any], available_units: int, zones: List[str], sort_key: pd.Series) -> Dict[str, int]:
-        """Ensures the final integer sum of allocations equals available_units after rounding."""
         final_allocations = {zone: int(round(val)) for zone, val in allocations.items()}
         
         allocated_units = sum(final_allocations.values())
@@ -359,7 +378,6 @@ class PredictiveAnalyticsEngine:
         return final_allocations
 
     def _allocate_proportional(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
-        """Basic proportional allocation based on risk scores."""
         logger.info("Using Proportional Allocation strategy.")
         risk_scores = kpi_df.set_index('Zone')['Integrated_Risk_Score']
         total_risk = risk_scores.sum()
@@ -373,7 +391,6 @@ class PredictiveAnalyticsEngine:
         return self._post_process_allocations(allocations, available_units, kpi_df['Zone'].tolist(), risk_scores)
 
     def _allocate_milp(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
-        """Optimizes allocation using Mixed-Integer Linear Programming to maximize risk coverage."""
         logger.info("Using MILP (Linear Optimization) strategy.")
         zones = kpi_df['Zone'].tolist()
         risk_scores = kpi_df['Integrated_Risk_Score'].values
@@ -392,7 +409,6 @@ class PredictiveAnalyticsEngine:
             return self._allocate_proportional(kpi_df, available_units)
 
     def _allocate_nlp(self, kpi_df: pd.DataFrame, available_units: int) -> Dict[str, int]:
-        """Optimizes allocation using Non-Linear Programming for more realistic modeling."""
         logger.info("Using NLP (Non-Linear Optimization) strategy.")
         zones = kpi_df['Zone'].tolist()
         risk_scores = kpi_df['Integrated_Risk_Score'].values
@@ -424,10 +440,6 @@ class PredictiveAnalyticsEngine:
             return self._allocate_proportional(kpi_df, available_units)
 
     def generate_allocation_recommendations(self, kpi_df: pd.DataFrame) -> Dict[str, int]:
-        """
-        Generates ambulance allocation recommendations using a configurable strategy.
-        This method acts as a dispatcher to the underlying OR models.
-        """
         if kpi_df.empty or kpi_df['Integrated_Risk_Score'].sum() == 0:
             return {zone: 0 for zone in self.dm.zones}
         
