@@ -146,8 +146,6 @@ class Dashboard:
     def _render_main_dashboard_tab(self, kpi_df, allocations, incidents):
         st.subheader("Current Situational Overview")
 
-        # --- OPTIMIZATION 1: Enhanced KPI Metrics with Icons ---
-        # The original layout was good. Adding icons for better visual cues.
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🚨 Active Incidents", len(incidents), help="Number of incidents currently being processed.")
         c2.metric("🚑 Available Ambulances", sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'), delta_color="off", help="Total number of ambulances with status 'Disponible'.")
@@ -161,8 +159,6 @@ class Dashboard:
             st.subheader("Live Risk Heatmap")
             self._render_map(kpi_df)
         with col2:
-            # --- OPTIMIZATION 2: Visualizing Allocations with a Bar Chart ---
-            # Replaced the static dataframe with a more intuitive and visually appealing Plotly bar chart.
             st.subheader("Recommended Ambulance Allocation")
             if allocations:
                 alloc_df = pd.DataFrame(list(allocations.items()), columns=['Zone', 'Recommended Units']).sort_values('Recommended Units', ascending=True)
@@ -174,8 +170,6 @@ class Dashboard:
             else:
                 st.info("No allocation recommendations available.")
             
-            # --- OPTIMIZATION 3: Visualizing Top Risk Zones ---
-            # Replaced the dataframe with a horizontal bar chart for a clearer ranking visualization.
             st.subheader("Top 5 Highest-Risk Zones")
             if not kpi_df.empty:
                 top_zones = kpi_df[['Zone', 'Integrated_Risk_Score']].sort_values(by='Integrated_Risk_Score', ascending=False).head(5)
@@ -192,7 +186,6 @@ class Dashboard:
     def _render_kpi_deep_dive_tab(self, kpi_df, forecast_df):
         st.subheader("Comprehensive Risk Indicator Matrix")
         st.markdown("This table shows the complete set of calculated KPIs for each zone. Sort columns by clicking headers.")
-        # The dataframe with background gradient is the best tool for this density of data. Kept as is.
         st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis', axis=0), use_container_width=True)
         
         st.divider()
@@ -212,11 +205,8 @@ class Dashboard:
         st.divider()
         st.subheader("Risk Forecast Visualizer")
         
-        # --- OPTIMIZATION 4: Interactive Forecast Chart ---
-        # Added an interactive line chart to visualize forecasts, making trends easier to spot than a static table.
         if not forecast_df.empty:
             all_zones = forecast_df['Zone'].unique().tolist()
-            # Select the top 5 riskiest zones by default for a clean initial view
             default_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
             
             selected_zones = st.multiselect(
@@ -276,9 +266,6 @@ class Dashboard:
     def _render_methodology_tab(self):
         st.header("System Architecture & Methodology")
         st.markdown("Explore the foundational principles, models, and metrics that power the Phoenix v4.0 engine.")
-
-        # --- OPTIMIZATION 5: Restructuring Methodology with Expanders for Readability ---
-        # The wall of text is broken into digestible, collapsible sections.
         
         with st.expander("🏛️ I. High-Level Goal & Architectural Philosophy", expanded=True):
             st.markdown("""
@@ -326,7 +313,6 @@ class Dashboard:
             """)
             
         with st.expander("📖 III. Key Performance Indicator (KPI) Glossary", expanded=False):
-            # --- OPTIMIZATION 6: Using columns for a scannable glossary ---
             st.markdown("These are the core metrics calculated by the Phoenix engine.")
             
             kpi_defs = {
@@ -355,7 +341,6 @@ class Dashboard:
                     st.markdown(definition)
                 st.markdown("---")
 
-    # --- EXPANSION: NEW PLOTTING METHODS ADDED TO THE CLASS ---
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
         st.markdown("**Risk Contribution Analysis**")
         st.help("This sunburst chart breaks down the final `Integrated_Risk_Score` for the highest-risk zone, showing the contribution of each analytical layer.")
@@ -465,6 +450,11 @@ class Dashboard:
 def main():
     """Main function to run the application."""
     try:
+        # These imports must be defined within the scope where they are used,
+        # or globally at the top of the file. Assuming they are in other project files.
+        # from core import DataManager, PredictiveAnalyticsEngine
+        # from utils import load_config
+        
         config = load_config()
         data_manager = DataManager(config)
         engine = PredictiveAnalyticsEngine(data_manager, config)
