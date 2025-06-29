@@ -137,7 +137,9 @@ class DataManager:
         intensity = 5.0 * (1.5 if env_factors.is_holiday else 1.0) * (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * (2.0 if env_factors.major_event else 1.0)
         num_incidents = int(np.random.poisson(intensity));
         if num_incidents == 0: return []
-        city_boundary = self.zones_gdf.unary_union; bounds = city_boundary.bounds; incidents = []
+        # DeprecationWarning Fix
+        city_boundary = self.zones_gdf.union_all()
+        bounds = city_boundary.bounds; incidents = []
         for i in range(num_incidents):
             lon, lat = np.random.uniform(bounds[0], bounds[2]), np.random.uniform(bounds[1], bounds[3])
             if city_boundary.contains(Point(lon, lat)): incidents.append({'id': f"SYN-{i}", 'type': np.random.choice(list(self.data_config['distributions']['incident_type'].keys())), 'triage': 'Red', 'location': {'lat': lat, 'lon': lon}, 'timestamp': datetime.utcnow().isoformat()})
@@ -209,8 +211,11 @@ class PredictiveAnalyticsEngine:
         
         if _self.bn_model:
             try:
+                # pgmpy API Fix
+                inference = VariableElimination(_self.bn_model)
                 evidence = {'Holiday':1 if env_factors.is_holiday else 0, 'Weather':1 if env_factors.weather!='Clear' else 0, 'MajorEvent':1 if env_factors.major_event else 0, 'AirQuality':1 if env_factors.air_quality_index>100 else 0, 'Heatwave':1 if env_factors.heatwave_alert else 0}
-                result = _self.bn_model.get_inference_engine().query(variables=['IncidentRate'], evidence=evidence, show_progress=False); rate_probs = result.values
+                result = inference.query(variables=['IncidentRate'], evidence=evidence, show_progress=False)
+                rate_probs = result.values
                 baseline_rate = np.sum(rate_probs * np.array([1, 5, 10])); kpi_df['Bayesian Confidence Score'] = 1 - (np.std(rate_probs) / (np.mean(rate_probs) + 1e-9))
             except Exception as e: logger.warning(f"BNI failed: {e}"); baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
         else: baseline_rate, kpi_df['Bayesian Confidence Score'] = 5.0, 0.5
@@ -248,46 +253,26 @@ class PredictiveAnalyticsEngine:
 
         return kpi_df.fillna(0).reset_index().rename(columns={'index': 'Zone'})
 
-    # --- START: NEW METHOD ADDED TO FIX THE ERROR ---
     def generate_kpis_with_sparklines(self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> (pd.DataFrame, Dict[str, List[float]]):
-        """
-        Wrapper method that generates KPIs and also creates simulated historical trend
-        data for sparkline visualizations on the dashboard.
-        """
-        # 1. Get the current set of KPIs using the original method.
         kpi_df = self.generate_kpis(historical_data, env_factors, current_incidents)
-
-        # 2. Generate plausible-looking historical data for the last 24 hours for sparklines.
-        # In a real system, this would query a time-series database. Here, we simulate it for demonstration.
         sparkline_data = {}
-        
-        # Simulate 'Active Incidents' trend
         current_incidents_count = len(current_incidents)
         incidents_trend = np.random.randn(23) * 2 + np.sin(np.linspace(0, np.pi, 23)) * 3
         incidents_history = np.clip(current_incidents_count + incidents_trend, 0, None).astype(int)
         sparkline_data['active_incidents'] = np.append(incidents_history, current_incidents_count).tolist()
-
-        # Simulate 'Available Ambulances' trend
         current_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
         ambulances_trend = np.random.randn(23)
         ambulances_history = np.clip(current_ambulances + ambulances_trend, 0, None).astype(int)
         sparkline_data['available_ambulances'] = np.append(ambulances_history, current_ambulances).tolist()
-        
-        # Simulate 'Highest Zone Risk' trend
         current_max_risk = kpi_df['Integrated_Risk_Score'].max()
         risk_trend = np.random.randn(23) * 0.05
         risk_history = np.clip(current_max_risk + risk_trend, 0, 1)
         sparkline_data['max_risk'] = np.append(risk_history, current_max_risk).tolist()
-        
-        # Simulate 'System Adequacy' trend
         current_adequacy = kpi_df['Resource Adequacy Index'].mean()
         adequacy_trend = np.random.randn(23) * 0.03
         adequacy_history = np.clip(current_adequacy + adequacy_trend, 0, 1)
         sparkline_data['adequacy'] = np.append(adequacy_history, current_adequacy).tolist()
-
-        # 3. Return both the KPI DataFrame and the sparkline data dictionary.
         return kpi_df, sparkline_data
-    # --- END: NEW METHOD ---
         
     def _calculate_lyapunov_exponent(_self, historical_data: List[Dict]) -> float:
         if len(historical_data) < 2: return 0.0
@@ -327,35 +312,25 @@ class PredictiveAnalyticsEngine:
                 decay = self.model_params['fallback_forecast_decay_rates'].get(str(horizon), 0.5)
                 combined_risk_score = row.get('Integrated_Risk_Score', row['Ensemble Risk Score'])
                 projected_risk = combined_risk_score * decay
-
-                # --- START: MODIFICATION TO ADD UNCERTAINTY BOUNDS ---
-                # Generate uncertainty bounds for the forecast visualization.
-                # In a real model, this would come from the model's statistical properties (e.g., ARIMA confidence intervals).
-                # Here, we simulate it as a percentage of the projected risk.
                 uncertainty = projected_risk * np.random.uniform(0.15, 0.25)
                 upper_bound = np.clip(projected_risk + uncertainty, 0, 1)
                 lower_bound = np.clip(projected_risk - uncertainty, 0, 1)
-                # --- END: MODIFICATION ---
-
                 forecast_data.append({
                     'Zone': row['Zone'], 
                     'Horizon (Hours)': horizon, 
                     'Combined Risk': projected_risk,
-                    'Upper_Bound': upper_bound, # Add new column for upper bound
-                    'Lower_Bound': lower_bound, # Add new column for lower bound
+                    'Upper_Bound': upper_bound,
+                    'Lower_Bound': lower_bound,
                     'Violence Risk': row.get('Violence Clustering Score', 0) * decay, 
                     'Accident Risk': row.get('Accident Clustering Score', 0) * decay, 
                     'Medical Risk': row.get('Medical Surge Score', 0) * decay
                 })
-        
         forecast_df = pd.DataFrame(forecast_data)
         if forecast_df.empty: 
             self.forecast_df = forecast_df
             return self.forecast_df
-        
         risk_cols_to_clip = ['Violence Risk', 'Accident Risk', 'Medical Risk', 'Combined Risk', 'Upper_Bound', 'Lower_Bound']
         forecast_df[risk_cols_to_clip] = forecast_df[risk_cols_to_clip].clip(0, 1)
-        
         self.forecast_df = forecast_df
         return self.forecast_df
         
