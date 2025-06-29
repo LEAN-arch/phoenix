@@ -207,11 +207,14 @@ class Dashboard:
             barmode='overlay'
         )
         st.plotly_chart(fig, use_container_width=True)
-        st.info("""
-        **How to Read:** The grey bar shows the risk level (demand). The colored marker shows the allocated units (supply).
-        **<span style='color:#50C878'>● Green:</span>** Adequately resourced for its risk.
-        **<span style='color:#FFD700'>● Yellow:</span>** Stretched resources.
-        **<span style='color:#FF4500'>● Red:</span>** Critically under-resourced. Action may be required.
+        
+        st.markdown("""
+        <div style="border: 1px solid #90CAF9; border-radius: 0.5rem; padding: 1rem; background-color: #E3F2FD;">
+        <strong>How to Read:</strong> The grey bar shows the risk level (demand). The colored marker shows the allocated units (supply).<br>
+        <span style='color:#50C878'>● <b>Green:</b></span> Adequately resourced for its risk.<br>
+        <span style='color:#FFD700'>● <b>Yellow:</b></span> Stretched resources.<br>
+        <span style='color:#FF4500'>● <b>Red:</b></span> Critically under-resourced. Action may be required.
+        </div>
         """, unsafe_allow_html=True)
 
     def _render_dynamic_map(self, kpi_df, incidents, allocations):
