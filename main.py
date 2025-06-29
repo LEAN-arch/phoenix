@@ -75,98 +75,63 @@ class Dashboard:
         with tab3:
             self._render_methodology_tab()
 
-    def _plot_kpi_trend_chart(self, data, normal_range, color_map):
-        fig = go.Figure()
+    def _render_system_status_bar(self, kpi_df, incidents, sparkline_data):
+        st.subheader("System Health Status")
 
-        current_val = data[-1]
-        if current_val > normal_range[1]: line_color = color_map['high']
-        elif current_val < normal_range[0]: line_color = color_map['low']
-        else: line_color = color_map['normal']
-
-        fig.add_trace(go.Scatter(
-            x=list(range(len(data))), y=data,
-            mode='lines', name='Current Trend',
-            line=dict(color=line_color, width=2.5),
-            fill='tozeroy',
-            fillcolor=f'rgba({int(line_color[1:3], 16)}, {int(line_color[3:5], 16)}, {int(line_color[5:7], 16)}, 0.1)'
-        ))
-
-        fig.update_layout(
-            height=60, margin=dict(l=0, r=40, t=5, b=0),
-            xaxis=dict(visible=False), 
-            yaxis=dict(
-                visible=True, showticklabels=True, side='right', nticks=3,
-                tickfont=dict(size=9, color='grey'),
-                range=[min(data)*0.95, max(data)*1.05]
-            ),
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            showlegend=False,
-        )
-        return fig
-
-    def _plot_system_pressure_gauge(self, kpi_df, env_factors):
-        traffic_norm = (env_factors.traffic_level - 0.5) / 2.5
-        hospital_norm = env_factors.hospital_divert_status
-        adequacy_norm = 1 - kpi_df['Resource Adequacy Index'].mean()
+        incidents_val = len(incidents)
+        incidents_data = sparkline_data.get('active_incidents', {'values': [incidents_val], 'range': [incidents_val-1, incidents_val+1]})
         
-        pressure_score = (traffic_norm * 0.3) + (hospital_norm * 0.4) + (adequacy_norm * 0.3)
-        pressure_score = min(pressure_score * 125, 100)
+        ambulances_val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+        ambulances_data = sparkline_data.get('available_ambulances', {'values': [ambulances_val], 'range': [ambulances_val-1, ambulances_val+1]})
+        
+        max_risk_val = kpi_df['Integrated_Risk_Score'].max()
+        max_risk_data = sparkline_data.get('max_risk', {'values': [max_risk_val], 'range': [0, 1]})
+        
+        adequacy_val = kpi_df['Resource Adequacy Index'].mean()
+        adequacy_data = sparkline_data.get('adequacy', {'values': [adequacy_val], 'range': [0, 1]})
 
-        fig = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = pressure_score,
-            title = {'text': "System Pressure", 'font': {'size': 20}},
-            gauge = {
-                'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                'bar': {'color': "#222"},
-                'bgcolor': "white",
-                'borderwidth': 2,
-                'bordercolor': "gray",
-                'steps': [
-                    {'range': [0, 40], 'color': '#388E3C'},
-                    {'range': [40, 75], 'color': '#FBC02D'},
-                    {'range': [75, 100], 'color': '#D32F2F'}],
-            }))
-        fig.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-        return fig
+        def get_status(val, normal_range, high_is_bad=True):
+            if (high_is_bad and val > normal_range[1]) or (not high_is_bad and val < normal_range[0]):
+                return "Critical", "#D32F2F"
+            if (high_is_bad and val > normal_range[0]) or (not high_is_bad and val < normal_range[1]):
+                return "Elevated", "#FBC02D"
+            return "Normal", "#388E3C"
+
+        def get_trend_arrow(data):
+            if len(data) < 2: return ""
+            if data[-1] > data[-2]: return "▲"
+            if data[-1] < data[-2]: return "▼"
+            return "▬"
+
+        inc_status, inc_color = get_status(incidents_val, incidents_data['range'])
+        amb_status, amb_color = get_status(ambulances_val, ambulances_data['range'], high_is_bad=False)
+        risk_status, risk_color = get_status(max_risk_val, max_risk_data['range'])
+        adeq_status, adeq_color = get_status(adequacy_val, adequacy_data['range'], high_is_bad=False)
+
+        st.markdown(f"""
+        <div style="width: 100%; display: flex; border: 1px solid #444; border-radius: 5px; overflow: hidden; font-family: sans-serif;">
+            <div style="flex: 1; background-color: {inc_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{incidents_val} {get_trend_arrow(incidents_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Active Incidents</div>
+            </div>
+            <div style="flex: 1; background-color: {amb_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{ambulances_val} {get_trend_arrow(ambulances_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Available Units</div>
+            </div>
+            <div style="flex: 1; background-color: {risk_color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{max_risk_val:.3f} {get_trend_arrow(max_risk_data['values'])}</div>
+                <div style="font-size: 0.8rem;">Max Zone Risk</div>
+            </div>
+            <div style="flex: 1; background-color: {adeq_color}; padding: 10px; text-align: center; color: white;">
+                <div style="font-size: 1.5rem; font-weight: bold;">{adequacy_val:.1%} {get_trend_arrow(adequacy_data['values'])}</div>
+                <div style="font-size: 0.8rem;">System Adequacy</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     def _render_operational_command_tab(self, kpi_df, allocations, incidents):
         sparkline_data = st.session_state.get('sparkline_data', {})
-        
-        st.subheader("System Vitals (Last 24 Hours)")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            val = len(incidents)
-            st.metric("🚨 Active Incidents", f"{val}")
-            if 'active_incidents' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_trend_chart(
-                    sparkline_data['active_incidents']['values'], sparkline_data['active_incidents']['range'],
-                    {'normal': '#1E90FF', 'high': '#FF4500', 'low': '#1E90FF'}
-                ), use_container_width=True)
-        with c2:
-            val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-            st.metric("🚑 Available Units", f"{val}")
-            if 'available_ambulances' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_trend_chart(
-                    sparkline_data['available_ambulances']['values'], sparkline_data['available_ambulances']['range'],
-                    {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}
-                ), use_container_width=True)
-        with c3:
-            val = kpi_df['Integrated_Risk_Score'].max()
-            st.metric("📈 Highest Zone Risk", f"{val:.3f}")
-            if 'max_risk' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_trend_chart(
-                    sparkline_data['max_risk']['values'], sparkline_data['max_risk']['range'],
-                    {'normal': '#1E90FF', 'high': '#AF4035', 'low': '#1E90FF'}
-                ), use_container_width=True)
-        with c4:
-            val = kpi_df['Resource Adequacy Index'].mean()
-            st.metric("📊 System Adequacy", f"{val:.1%}")
-            if 'adequacy' in sparkline_data:
-                st.plotly_chart(self._plot_kpi_trend_chart(
-                    sparkline_data['adequacy']['values'], sparkline_data['adequacy']['range'],
-                    {'normal': '#50C878', 'low': '#FF4500', 'high': '#50C878'}
-                ), use_container_width=True)
+        self._render_system_status_bar(kpi_df, incidents, sparkline_data)
         st.divider()
 
         col1, col2 = st.columns([3, 2])
@@ -178,6 +143,20 @@ class Dashboard:
             st.plotly_chart(self._plot_system_pressure_gauge(kpi_df, st.session_state['env_factors']), use_container_width=True)
             self._plot_resource_to_risk_adequacy_v2(kpi_df, allocations)
 
+    def _plot_system_pressure_gauge(self, kpi_df, env_factors):
+        traffic_norm = (env_factors.traffic_level - 0.5) / 2.5
+        hospital_norm = env_factors.hospital_divert_status
+        adequacy_norm = 1 - kpi_df['Resource Adequacy Index'].mean()
+        pressure_score = (traffic_norm * 0.3) + (hospital_norm * 0.4) + (adequacy_norm * 0.3)
+        pressure_score = min(pressure_score * 125, 100)
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = pressure_score,
+            title = {'text': "System Pressure", 'font': {'size': 20}},
+            gauge = { 'axis': {'range': [None, 100]}, 'bar': {'color': "#222"},
+                      'steps': [{'range': [0, 40], 'color': '#388E3C'}, {'range': [40, 75], 'color': '#FBC02D'}, {'range': [75, 100], 'color': '#D32F2F'}]}))
+        fig.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+        return fig
+    
     def _plot_resource_to_risk_adequacy_v2(self, kpi_df, allocations):
         if kpi_df.empty: st.info("No data for risk adequacy plot."); return
         top_zones_df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
@@ -187,8 +166,8 @@ class Dashboard:
         top_zones_df['adequacy_ratio'] = (top_zones_df['risk_covered'] / top_zones_df['Integrated_Risk_Score']).clip(0, 1.5)
 
         def get_color(ratio):
-            if ratio < 0.7: return '#D32F2F';
-            if ratio < 1.0: return '#FBC02D';
+            if ratio < 0.7: return '#D32F2F'
+            if ratio < 1.0: return '#FBC02D'
             return '#388E3C'
         top_zones_df['adequacy_color'] = top_zones_df['adequacy_ratio'].apply(get_color)
 
@@ -204,10 +183,25 @@ class Dashboard:
         if self.dm.zones_gdf.empty or kpi_df.empty: return
         try:
             map_gdf = self.dm.zones_gdf.join(kpi_df.set_index('Zone'))
+            # --- START: KEYERROR FIX ---
+            # Reset the index so 'Zone' becomes a regular column that Folium can find.
+            # Then, rename the original 'name' column (from the GeoDataFrame) to 'Zone' to match kpi_df.
+            map_gdf.reset_index(inplace=True)
+            if 'name' not in map_gdf.columns and 'Zone' in map_gdf.columns:
+                pass # Already correct
+            elif 'name' in map_gdf.columns and 'Zone' not in map_gdf.columns:
+                 map_gdf.rename(columns={'name':'Zone'}, inplace=True)
+            # --- END: KEYERROR FIX ---
+
             center = map_gdf.union_all().centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="cartodbpositron", prefer_canvas=True)
             
-            folium.Choropleth(geo_data=map_gdf.to_json(), data=map_gdf, columns=['Zone', 'Integrated_Risk_Score'], key_on='feature.properties.Zone', fill_color='YlOrRd', fill_opacity=0.7, line_opacity=0.2, legend_name='Integrated Risk Score', name="Risk Heatmap").add_to(m)
+            folium.Choropleth(
+                geo_data=map_gdf.to_json(), data=map_gdf,
+                columns=['Zone', 'Integrated_Risk_Score'], key_on='feature.properties.Zone',
+                fill_color='YlOrRd', fill_opacity=0.7, line_opacity=0.2,
+                legend_name='Integrated Risk Score', name="Risk Heatmap"
+            ).add_to(m)
 
             incidents_fg = folium.FeatureGroup(name='Live Incidents', show=True)
             for inc in incidents:
