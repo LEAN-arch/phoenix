@@ -340,10 +340,15 @@ class Dashboard:
             x_threshold = kpi_df['Ensemble Risk Score'].quantile(0.75)
             y_threshold = kpi_df['GNN_Structural_Risk'].quantile(0.75)
             
+            # --- CORRECTED: Use the pandas Series .max() method ---
+            max_incidents = max(kpi_df['Expected Incident Volume'].max(), 1)
+            sizeref = 2. * max_incidents / (40.**2)
+
             fig = go.Figure()
 
             # --- Background Quadrant Shading for immediate visual context ---
-            x_max, y_max = kpi_df['Ensemble Risk Score'].max()*1.1, kpi_df['GNN_Structural_Risk'].max()*1.1
+            x_max = kpi_df['Ensemble Risk Score'].max() * 1.1
+            y_max = kpi_df['GNN_Structural_Risk'].max() * 1.1
             fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=y_threshold, x1=x_max, y1=y_max, fillcolor="rgba(211, 47, 47, 0.1)", line_width=0, layer="below")
             fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=0, x1=x_max, y1=y_threshold, fillcolor="rgba(251, 192, 45, 0.1)", line_width=0, layer="below")
             fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=y_threshold, x1=x_threshold, y1=y_max, fillcolor="rgba(30, 136, 229, 0.1)", line_width=0, layer="below")
@@ -356,7 +361,7 @@ class Dashboard:
                 marker=dict(
                     size=kpi_df['Expected Incident Volume'],
                     sizemode='area',
-                    sizeref=2.*max(kpi_df['Expected Incident Volume'], 1)/(40.**2),
+                    sizeref=sizeref,
                     sizemin=5,
                     color=kpi_df['Integrated_Risk_Score'],
                     colorscale='Reds',
@@ -386,7 +391,6 @@ class Dashboard:
             fig.add_vline(x=x_threshold, line_width=1.5, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
             fig.add_hline(y=y_threshold, line_width=1.5, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
 
-            # CORRECTED and IMPROVED Annotations
             anno_defaults = dict(xref="paper", yref="paper", showarrow=False, font=dict(family="Arial, sans-serif", size=11, color="rgba(0,0,0,0.5)"))
             fig.add_annotation(x=0.98, y=0.98, text="<b>CRISIS ZONES</b><br>(High Dynamic, High Structural)", xanchor='right', yanchor='top', align='right', **anno_defaults)
             fig.add_annotation(x=0.98, y=0.02, text="<b>ACUTE HOTSPOTS</b><br>(High Dynamic, Low Structural)", xanchor='right', yanchor='bottom', align='right', **anno_defaults)
