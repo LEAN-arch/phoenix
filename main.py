@@ -305,252 +305,415 @@ class Dashboard:
 
 # In main.py, replace the existing _render_methodology_tab method
 
-    def _render_methodology_tab(self):
-        st.header("System Architecture & Methodology")
-        st.markdown("This section provides a deep dive into the analytical engine powering the Phoenix v4.0 platform. It is designed for data scientists, analysts, and command staff who wish to understand the 'why' behind the system's predictions and prescriptions.")
+def _render_methodology_tab(self):
+    st.header("System Architecture & Methodology")
+    st.markdown("This section provides a deep dive into the analytical engine powering the Phoenix v4.0 platform. It is designed for data scientists, analysts, and command staff who wish to understand the 'why' behind the system's predictions and prescriptions.")
 
-        with st.expander("I. Architectural Philosophy: From Prediction to Prescription", expanded=True):
-            st.markdown("""
-            The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** (dispatching units after an incident occurs) to a **proactive, prescriptive posture** (anticipating where incidents are likely to emerge and prescriptively positioning resources to minimize response times and maximize impact).
+    with st.expander("I. Architectural Philosophy: From Prediction to Prescription", expanded=True):
+        st.markdown("""
+        The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** (dispatching units after an incident occurs) to a **proactive, prescriptive posture** (anticipating where incidents are likely to emerge and prescriptively positioning resources to minimize response times and maximize impact).
 
-            To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single "black box" algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered, "glass box" architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
+        To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single "black box" algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered, "glass box" architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
 
-            The architecture is composed of four primary layers:
-            1.  **LAYER 1: Foundational Models.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks, Graph Laplacians) that create a robust baseline understanding of risk. This produces the `Ensemble_Risk_Score`.
-            2.  **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, HMMs, GNNs) to capture deeper, more nuanced patterns that complement the foundational layer.
-            3.  **LAYER 3: Integrated Synthesis (Prediction).** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`. This score represents the system's best **prediction** of risk.
-            4.  **LAYER 4: Prescriptive Optimization (Prescription).** The `Integrated_Risk_Score` and `Expected Incident Volume` are fed into an Operations Research (OR) engine. This layer moves beyond prediction to **prescription**, determining the *optimal* real-world action to take (e.g., ambulance allocation) to best mitigate the predicted risk.
-            """)
+        The architecture is composed of four primary layers:
+        1. **LAYER 1: Foundational Models.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks, Graph Laplacians) that create a robust baseline understanding of risk. This produces the `Ensemble_Risk_Score`.
+        2. **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, HMMs, GNNs) to capture deeper, more nuanced patterns that complement the foundational layer.
+        3. **LAYER 3: Integrated Synthesis (Prediction).** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`. This score represents the system's best **prediction** of risk.
+        4. **LAYER 4: Prescriptive Optimization (Prescription).** The `Integrated_Risk_Score` and `Expected Incident Volume` are fed into an Operations Research (OR) engine. This layer moves beyond prediction to **prescription**, determining the *optimal* real-world action to take (e.g., ambulance allocation) to best mitigate the predicted risk.
+        """)
 
-        with st.expander("II. The Prediction Engine: A Multi-Model Deep Dive", expanded=False):
-            st.info("#### Core Principle: Different questions require different tools. No single model can capture all facets of urban risk.", icon="💡")
-            
-            st.markdown("---")
-            st.markdown("#### **A. Stochastic & Statistical Models (The 'When')**")
-            st.markdown("""
-            *   **Non-Homogeneous Poisson Process (NHPP):** This model forms the temporal backbone of our predictions. It understands that incident rates are not constant.
-                -   **Question it Answers:** *"What is the baseline probability of an incident at 3 AM on a Tuesday versus 6 PM on a Friday?"*
-                -   **Relevance:** Captures the predictable, cyclical nature of urban life, ensuring our baseline risk is sensitive to the time of day and day of the week.
-               -   **Mathematical Formulation:** The intensity function `λ(t)` is modeled as a function of time, often using a log-linear model with Fourier terms to capture cyclicity:
-                    $$
-                    \\lambda(t) = \\exp\\left( \\beta_0 + \\sum_{k=1}^{K} \\left[ \\beta_k \\cos\\left(\\frac{2\\pi kt}{T}\\right) + \\gamma_k \\sin\\left(\\frac{2\\pi kt}{T}\\right) \\right] \\right)
-                    $$
-                    where `β` and `γ` are coefficients learned from historical data and `T` is the period of the cycle (e.g., 24 hours or 168 hours).
-                    
-            *   **Hawkes Process (Self-Exciting Point Process):** This is the cornerstone of our violence and cascading accident models. It operates on the principle that certain events can trigger "aftershocks."
-                -   **Question it Answers:** *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* or *"After a major highway collision, what is the increased likelihood of secondary accidents due to traffic build-up?"*
-                -   **Relevance:** Critical for modeling retaliatory gang violence and chain-reaction traffic incidents. It directly powers the `Trauma Clustering Score`.
-                -   **Mathematical Formulation:** The conditional intensity `λ(t)` of an event at time `t` is defined as:
-                    $$
-                    \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
-                    $$
-                    where `μ(t)` is the background rate from the NHPP, the sum is over past event times `tᵢ`, `α` is the branching ratio (strength of aftershock), and `g(t - tᵢ)` is the triggering kernel modeling the decaying influence of past events.
+    with st.expander("II. The Prediction Engine: A Multi-Model Deep Dive", expanded=False):
+        st.info("#### Core Principle: Different questions require different tools. No single model can capture all facets of urban risk.", icon="💡")
+        
+        st.markdown("---")
+        st.markdown("#### **A. Stochastic & Statistical Models (The 'When')**")
+        st.markdown("""
+        * **Non-Homogeneous Poisson Process (NHPP):** This model forms the temporal backbone of our predictions. It understands that incident rates are not constant.
+            - **Question it Answers:** *"What is the baseline probability of an incident at 3 AM on a Tuesday versus 6 PM on a Friday?"*
+            - **Relevance:** Captures the predictable, cyclical nature of urban life, ensuring our baseline risk is sensitive to the time of day and day of the week.
+            - **Mathematical Formulation:** The intensity function `λ(t)` is modeled as a function of time, often using a log-linear model with Fourier terms to capture cyclicity:
+                $$
+                \\lambda(t) = \\exp\\left( \\beta_0 + \\sum_{k=1}^{K} \\left[ \\beta_k \\cos\\left(\\frac{2\\pi kt}{T}\\right) + \\gamma_k \\sin\\left(\\frac{2\\pi kt}{T}\\right) \\right] \\right)
+                $$
+                where `β` and `γ` are coefficients learned from historical data and `T` is the period of the cycle (e.g., 24 hours or 168 hours).
+                
+        * **Hawkes Process (Self-Exciting Point Process):** This is the cornerstone of our violence and cascading accident models. It operates on the principle that certain events can trigger "aftershocks."
+            - **Question it Answers:** *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* or *"After a major highway collision, what is the increased likelihood of secondary accidents due to traffic build-up?"*
+            - **Relevance:** Critical for modeling retaliatory gang violence and chain-reaction traffic incidents. It directly powers the `Trauma Clustering Score`.
+            - **Mathematical Formulation:** The conditional intensity `λ(t)` of an event at time `t` is defined as:
+                $$
+                \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
+                $$
+                where `μ(t)` is the background rate from the NHPP, the sum is over past event times `tᵢ`, `α` is the branching ratio (strength of aftershock), and `g(t - tᵢ)` is the triggering kernel modeling the decaying influence of past events.
 
-            *   **Bayesian Networks:** These models represent our understanding of causal relationships. They combine static base rates with real-time environmental factors.
-                -   **Question it Answers:** *"How does a public holiday, combined with rainy weather and a major concert, collectively influence the probability of an incident?"*
-                -   **Relevance:** Allows the system to reason with expert knowledge and adapt to contextual factors like `Weather`, `Is Holiday`, and `Major Event`. It is a core driver of the baseline `Incident Probability`.
-                -   **Mathematical Formulation:** Based on the chain rule of probability, where the joint probability is the product of conditional probabilities: $P(X_1, ..., X_n) = \\prod_{i=1}^{n} P(X_i | \\text{Parents}(X_i))$. Our network models `P(IncidentRate | Weather, Holiday, ...)` to find the most likely baseline rate.
-            """)
-            
-            st.markdown("---")
-            st.markdown("#### **B. Spatiotemporal & Graph Models (The 'Where' and 'How It Spreads')**")
-            st.markdown("""
-            *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this advanced technique. It models risk as a continuous fluid over the map.
-                -   **Question it Answers:** *"An incident occurred 500 meters from this zone's border. How much 'risk pressure' does that exert on this zone?"*
-                -   **Relevance:** Interpolates risk intelligently across the map, ensuring that proximity to danger is always accounted for, even across arbitrary zone boundaries.
-                -   **Mathematical Formulation:** The risk `f` at a spatiotemporal point `(s, t)` is modeled as a draw from a Gaussian Process:
-                    $$
-                    f(s, t) \\sim \\mathcal{GP}(m(s, t), k((s, t), (s', t')))
-                    $$
-                    where `m(s, t)` is the mean function and `k` is a spatiotemporal kernel, often a product of a spatial kernel (like RBF) and a temporal kernel:
-                    $$
-                    k((s, t), (s', t')) = \\sigma^2 \\exp\\left(-\\frac{\|s-s'\|^2}{2l_s^2}\\right) \\exp\\left(-\\frac{|t-t'|^2}{2l_t^2}\\right)
-                    $$
-                    The lengthscales `l_s` and `l_t` control the "range" of influence in space and time.
-           
-            *   **Graph Neural Networks (GNNs):** The city's road network and zone adjacencies are treated as a complex graph. A GNN learns a deep, structural understanding of each zone's role within this network.
-                -   **Question it Answers:** *"Is this zone inherently vulnerable simply due to its position as a major crossroads, regardless of recent events?"*
-                -   **Relevance:** Identifies long-term, structural vulnerabilities that may not be apparent from recent incident data alone. It powers the `GNN_Structural_Risk`, representing a zone's intrinsic risk.
-                -   **Mathematical Formulation (GCN Layer):** A GNN works by passing "messages" between connected nodes. A common layer operation is:
-                    $$
-                    H^{(l+1)} = \\sigma(\\hat{D}^{-\\frac{1}{2}} \\hat{A} \\hat{D}^{-\\frac{1}{2}} H^{(l)} W^{(l)})
-                    $$
-                    This means the new features for a node (`H^(l+1)`) are a transformed aggregate of its neighbors' previous features (`H^(l)`), where `Â` is the adjacency matrix with self-loops, `D̂` is its degree matrix, `W` is a learnable weight matrix, and `σ` is an activation function.
-           
-            *   **Graph Laplacian Diffusion:** This technique models how effects (like traffic, panic, or police cordons) "spill over" from one zone to its neighbors through the road network.
-                -   **Question it Answers:** *"A major fire has shut down three blocks in Zone A. How does this increase the traffic-related accident risk in the adjacent Zone B?"*
-                -   **Relevance:** Essential for modeling the secondary effects of major incidents. It directly calculates the `Spatial Spillover Risk`.
-                -   **Mathematical Formulation:** The process is modeled by the heat diffusion equation on a graph. A single discrete step of this process is:
-                    $$
-                    r(t+1) = (I - \\epsilon L) r(t)
-                    $$
-                    where `r(t)` is the vector of zone risks, `I` is the identity matrix, `ε` is a small step size, and `L` is the normalized graph Laplacian matrix.
-            """)
+        * **Bayesian Networks:** These models represent our understanding of causal relationships. They combine static base rates with real-time environmental factors.
+            - **Question it Answers:** *"How does a public holiday, combined with rainy weather and a major concert, collectively influence the probability of an incident?"*
+            - **Relevance:** Allows the system to reason with expert knowledge and adapt to contextual factors like `Weather`, `Is Holiday`, and `Major Event`. It is a core driver of the baseline `Incident Probability`.
+            - **Mathematical Formulation:** Based on the chain rule of probability, where the joint probability is the product of conditional probabilities: $P(X_1, ..., X_n) = \\prod_{i=1}^{n} P(X_i | \\text{Parents}(X_i))$. Our network models `P(IncidentRate | Weather, Holiday, ...)` to find the most likely baseline rate.
+        """)
+        
+        st.markdown("---")
+        st.markdown("#### **B. Spatiotemporal & Graph Models (The 'Where' and 'How It Spreads')**")
+        st.markdown("""
+        * **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this advanced technique. It models risk as a continuous fluid over the map.
+            - **Question it Answers:** *"An incident occurred 500 meters from this zone's border. How much 'risk pressure' does that exert on this zone?"*
+            - **Relevance:** Interpolates risk intelligently across the map, ensuring that proximity to danger is always accounted for, even across arbitrary zone boundaries.
+            - **Mathematical Formulation:** The risk `f` at a spatiotemporal point `(s, t)` is modeled as a draw from a Gaussian Process:
+                $$
+                f(s, t) \\sim \\mathcal{GP}(m(s, t), k((s, t), (s', t')))
+                $$
+                where `m(s, t)` is the mean function and `k` is a spatiotemporal kernel, often a product of a spatial kernel (like RBF) and a temporal kernel:
+                $$
+                k((s, t), (s', t')) = \\sigma^2 \\exp\\left(-\\frac{\\|s-s'\|^2}{2l_s^2}\\right) \\exp\\left(-\\frac{|t-t'|^2}{2l_t^2}\\right)
+                $$
+                The lengthscales `l_s` and `l_t` control the "range" of influence in space and time.
+       
+        * **Graph Neural Networks (GNNs):** The city's road network and zone adjacencies are treated as a complex graph. A GNN learns a deep, structural understanding of each zone's role within this network.
+            - **Question it Answers:** *"Is this zone inherently vulnerable simply due to its position as a major crossroads, regardless of recent events?"*
+            - **Relevance:** Identifies long-term, structural vulnerabilities that may not be apparent from recent incident data alone. It powers the `GNN_Structural_Risk`, representing a zone's intrinsic risk.
+            - **Mathematical Formulation (GCN Layer):** A GNN works by passing "messages" between connected nodes. A common layer operation is:
+                $$
+                H^{(l+1)} = \\sigma(\\hat{D}^{-\\frac{1}{2}} \\hat{A} \\hat{D}^{-\\frac{1}{2}} H^{(l)} W^{(l)})
+                $$
+                This means the new features for a node (`H^(l+1)`) are a transformed aggregate of its neighbors' previous features (`H^(l)`), where `Â` is the adjacency matrix with self-loops, `D̂` is its degree matrix, `W` is a learnable weight matrix, and `σ` is an activation function.
+       
+        * **Graph Laplacian Diffusion:** This technique models how effects (like traffic, panic, or police cordons) "spill over" from one zone to its neighbors through the road network.
+            - **Question it Answers:** *"A major fire has shut down three blocks in Zone A. How does this increase the traffic-related accident risk in the adjacent Zone B?"*
+            - **Relevance:** Essential for modeling the secondary effects of major incidents. It directly calculates the `Spatial Spillover Risk`.
+            - **Mathematical Formulation:** The process is modeled by the heat diffusion equation on a graph. A single discrete step of this process is:
+                $$
+                r(t+1) = (I - \\epsilon L) r(t)
+                $$
+                where `r(t)` is the vector of zone risks, `I` is the identity matrix, `ε` is a small step size, and `L` is the normalized graph Laplacian matrix.
+        """)
 
-            st.markdown("---")
-            st.markdown("#### **C. Complexity & Information Theory (The 'System State')**")
-            st.markdown("""
-            *   **Lyapunov Exponents (Chaos Sensitivity Score):** A concept from Chaos Theory that measures a system's sensitivity to small changes. A high score means the system is in a fragile, unpredictable state.
-                -   **Question it Answers:** *"Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?"*
-                -   **Relevance:** This is a critical "instability alarm" for command staff. It doesn't predict a specific incident, but warns that the entire system is volatile.
-                -   **Mathematical Formulation (Conceptual):** It measures the exponential rate of divergence of nearby trajectories. If `δ(t)` is the separation between two trajectories over time, the largest Lyapunov exponent `λ` is estimated by:
-                    $$
-                    \\lambda \\approx \\frac{1}{t} \\ln \\frac{\\| \\delta(t) \\|}{\\| \\delta(0) \\|}
-                    $$
-                    A positive `λ` is an indicator of chaos.
-            *   **Kullback-Leibler (KL) Divergence (Anomaly Score):** An information theory metric that measures how much the current pattern of incidents deviates from the historical norm.
-                -   **Question it Answers:** *"Are we seeing the right number of incidents, but in all the wrong places today? Or are we seeing a bizarre new type of incident we've never seen before?"*
-                -   **Relevance:** Detects "pattern anomalies" that simple volume-based metrics would miss. A high score is a clear signal that "today is not a normal day."
-                -   **Mathematical Formulation:** 
-                    $$
-                    D_{KL}(P || Q) = \\sum_{z \\in \\text{Zones}} P(z) \\log{\\frac{P(z)}{Q(z)}}
-                    $$
-            """)
+        st.markdown("---")
+        st.markdown("#### **C. Complexity & Information Theory (The 'System State')**")
+        st.markdown("""
+        * **Lyapunov Exponents (Chaos Sensitivity Score):** A concept from Chaos Theory that measures a system's sensitivity to small changes. A high score means the system is in a fragile, unpredictable state.
+            - **Question it Answers:** *"Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?"*
+            - **Relevance:** This is a critical "instability alarm" for command staff. It doesn't predict a specific incident, but warns that the entire system is volatile.
+            - **Mathematical Formulation (Conceptual):** It measures the exponential rate of divergence of nearby trajectories. If `δ(t)` is the separation between two trajectories over time, the largest Lyapunov exponent `λ` is estimated by:
+                $$
+                \\lambda \\approx \\frac{1}{t} \\ln \\frac{\\| \\delta(t) \\|}{\\| \\delta(0) \\|}
+                $$
+                A positive `λ` is an indicator of chaos.
+        * **Kullback-Leibler (KL) Divergence (Anomaly Score):** An information theory metric that measures how much the current pattern of incidents deviates from the historical norm.
+            - **Question it Answers:** *"Are we seeing the right number of incidents, but in all the wrong places today? Or are we seeing a bizarre new type of incident we've never seen before?"*
+            - **Relevance:** Detects "pattern anomalies" that simple volume-based metrics would miss. A high score is a clear signal that "today is not a normal day."
+            - **Mathematical Formulation:**
+                $$
+                D_{KL}(P || Q) = \\sum_{z \\in \\text{Zones}} P(z) \\log{\\frac{P(z)}{Q(z)}}
+                $$
+        """)
 
-        with st.expander("III. The Prescription Engine: Optimal Resource Allocation", expanded=False):
-            st.info("#### Core Principle: Moving from 'what will happen' to 'what is the best thing to do'.", icon="🎯")
-            st.markdown("""
-            The prescriptive engine uses the risk scores from the prediction layer as inputs into sophisticated Operations Research models. This ensures that resource allocation is not just intuitive, but mathematically optimal based on our objectives.
+    with st.expander("III. The Prescription Engine: Optimal Resource Allocation", expanded=False):
+        st.info("#### Core Principle: Moving from 'what will happen' to 'what is the best thing to do'.", icon="🎯")
+        st.markdown("""
+        The prescriptive engine uses the risk scores from the prediction layer as inputs into sophisticated Operations Research models. This ensures that resource allocation is not just intuitive, but mathematically optimal based on our objectives.
 
-            *   **Mixed-Integer Linear Programming (MILP):** This is the workhorse for `Linear Optimal` allocation. It finds the provably best way to assign a whole number of ambulances to zones.
-                -   **Objective:** Maximize the total amount of risk "covered" across the entire city.
-                -   **Relevance:** Excellent for finding the most efficient solution under a single, clear objective. It is fast and guarantees a mathematically optimal result for a linear problem.
-                -   **Mathematical Formulation (Simplified):**
-                    $$
-                    \\begin{aligned}
-                    & \\text{maximize} && \\sum_{i \\in \\text{Zones}} R_i \\cdot c_i \\\\
-                    & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i \\leq N, \\quad c_i \\in \\mathbb{Z}^+
-                    \\end{aligned}
-                    $$
-                    where `Rᵢ` is the risk score for zone `i`, `cᵢ` is the integer number of ambulances assigned, and `N` is the total available.
-            *   **Non-Linear Programming (NLP):** This is our most advanced model for `Non-Linear Optimal` allocation. It captures complex, real-world dynamics that linear models miss.
-                -   **Objective:** Minimize a "system dissatisfaction" function, which includes two key non-linear effects:
-                    1.  **Diminishing Returns (Logarithmic Utility):** The first ambulance sent to a zone provides a huge benefit; the fifth provides much less. The model understands this and avoids over-saturating a single high-risk zone if another zone has zero coverage.
-                    2.  **Congestion Penalties (Quadratic Penalty):** As the number of expected incidents in a zone vastly outpaces the allocated units, the "harm" (e.g., response time delay) grows exponentially, not linearly.
-                -   **Relevance:** This provides the most realistic and robust recommendations. It makes intelligent trade-offs that a human or a simpler model might miss, leading to a more resilient overall system posture.
-                -   **Mathematical Formulation (Simplified):**
-                    $$
-                    \\begin{aligned}
-                    & \\text{minimize} && \\sum_{i \\in \\text{Zones}} \\left( w_1(R_i - R_i \\log(1+c_i)) + w_2 \\left( \\frac{E_i}{1+c_i} \\right)^2 \\right) \\\\
-                    & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i = N, \\quad c_i \\geq 0
-                    \\end{aligned}
-                    $$
-                    where `Eᵢ` is expected incidents, the `log` term models **diminishing returns**, and the quadratic term models **congestion penalties**.
-            *   **Queueing Theory:** This mathematical theory is conceptually used to model system strain, particularly at hospitals.
-                -   **Relevance:** By understanding arrival rates (from our predictions) and service rates, we can better estimate wait times and the impact of hospital diversions, which feeds into the `Resource Adequacy Index`.
-            *   **Objective:** To mathematically model and predict wait times, congestion, and the probability of system saturation (e.g., at a hospital ER).
-            *   **Overall Relevance in the System:** Queueing theory provides a robust, theoretical foundation for the `Resource Adequacy Index` and informs routing decisions. Instead of a simple penalty for a busy hospital, it allows the system to calculate the *actual expected delay*, leading to smarter assignments.
-            *   **The Question it Answers:** "If we send another ambulance to Hospital X, what is the probability it will have to wait more than 15 minutes to offload the patient, given their current patient load and our predicted arrival rate of new incidents?"
-            *   **Mathematical Formulation (M/M/c Model):** For a system with `c` servers (e.g., ER beds), a Poisson arrival rate `λ` (from our incident predictions), and an exponential service rate `μ`, the probability of an arriving patient having to wait is given by the Erlang-C formula:
+        * **Mixed-Integer Linear Programming (MILP):** This is the workhorse for `Linear Optimal` allocation. It finds the provably best way to assign a whole number of ambulances to zones.
+            - **Objective:** Maximize the total amount of risk "covered" across the entire city.
+            - **Relevance:** Excellent for finding the most efficient solution under a single, clear objective. It is fast and guarantees a mathematically optimal result for a linear problem.
+            - **Mathematical Formulation (Simplified):**
+                $$
+                \\begin{aligned}
+                & \\text{maximize} && \\sum_{i \\in \\text{Zones}} R_i \\cdot c_i \\\\
+                & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i \\leq N, \\quad c_i \\in \\mathbb{Z}^+
+                \\end{aligned}
+                $$
+                where `Rᵢ` is the risk score for zone `i`, `cᵢ` is the integer number of ambulances assigned, and `N` is the total available.
+        * **Non-Linear Programming (NLP):** This is our most advanced model for `Non-Linear Optimal` allocation. It captures complex, real-world dynamics that linear models miss.
+            - **Objective:** Minimize a "system dissatisfaction" function, which includes two key non-linear effects:
+                1. **Diminishing Returns (Logarithmic Utility):** The first ambulance sent to a zone provides a huge benefit; the fifth provides much less. The model understands this and avoids over-saturating a single high-risk zone if another zone has zero coverage.
+                2. **Congestion Penalties (Quadratic Penalty):** As the number of expected incidents in a zone vastly outpaces the allocated units, the "harm" (e.g., response time delay) grows exponentially, not linearly.
+            - **Relevance:** This provides the most realistic and robust recommendations. It makes intelligent trade-offs that a human or a simpler model might miss, leading to a more resilient overall system posture.
+            - **Mathematical Formulation (Simplified):**
+                $$
+                \\begin{aligned}
+                & \\text{minimize} && \\sum_{i \\in \\text{Zones}} \\left( w_1(R_i - R_i \\log(1+c_i)) + w_2 \\left( \\frac{E_i}{1+c_i} \\right)^2 \\right) \\\\
+                & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i = N, \\quad c_i \\geq 0
+                \\end{aligned}
+                $$
+                where `Eᵢ` is expected incidents, the `log` term models **diminishing returns**, and the quadratic term models **congestion penalties**.
+        * **Queueing Theory:** This mathematical theory is conceptually used to model system strain, particularly at hospitals.
+            - **Relevance:** By understanding arrival rates (from our predictions) and service rates, we can better estimate wait times and the impact of hospital diversions, which feeds into the `Resource Adequacy Index`.
+            - **Objective:** To mathematically model and predict wait times, congestion, and the probability of system saturation (e.g., at a hospital ER).
+            - **Overall Relevance in the System:** Queueing theory provides a robust, theoretical foundation for the `Resource Adequacy Index` and informs routing decisions. Instead of a simple penalty for a busy hospital, it allows the system to calculate the *actual expected delay*, leading to smarter assignments.
+            - **The Question it Answers:** "If we send another ambulance to Hospital X, what is the probability it will have to wait more than 15 minutes to offload the patient, given their current patient load and our predicted arrival rate of new incidents?"
+            - **Mathematical Formulation (M/M/c Model):** For a system with `c` servers (e.g., ER beds), a Poisson arrival rate `λ` (from our incident predictions), and an exponential service rate `μ`, the probability of an arriving patient having to wait is given by the Erlang-C formula:
                 $$
                 P_{\text{wait}} = C(c, \lambda/\mu) = \frac{(\lambda/\mu)^c / c!}{ ((\lambda/\mu)^c / c!) + (1 - \lambda/(c\mu)) \sum_{k=0}^{c-1} (\lambda/\mu)^k / k!}
                 $$
-            *   **Mathematical Relevance:** This is a cornerstone of Operations Research, providing a powerful analytical framework to understand and optimize stochastic systems defined by random arrivals and service times, which perfectly describes an emergency response network.
-            """)
+            - **Mathematical Relevance:**
+
+System: <xaiArtifact artifact_id="97400dec-23f3-4961-8391-6dad657f6c4e" artifact_version_id="8354cb1b-ef15-4eab-9607-62c7179aeccf" title="methodology_tab.py" contentType="text/python">
+def _render_methodology_tab(self):
+    st.header("System Architecture & Methodology")
+    st.markdown("This section provides a deep dive into the analytical engine powering the Phoenix v4.0 platform. It is designed for data scientists, analysts, and command staff who wish to understand the 'why' behind the system's predictions and prescriptions.")
+
+    with st.expander("I. Architectural Philosophy: From Prediction to Prescription", expanded=True):
+        st.markdown("""
+        The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** (dispatching units after an incident occurs) to a **proactive, prescriptive posture** (anticipating where incidents are likely to emerge and prescriptively positioning resources to minimize response times and maximize impact).
+
+        To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single "black box" algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered, "glass box" architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
+
+        The architecture is composed of four primary layers:
+        1. **LAYER 1: Foundational Models.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks, Graph Laplacians) that create a robust baseline understanding of risk. This produces the `Ensemble_Risk_Score`.
+        2. **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, HMMs, GNNs) to capture deeper, more nuanced patterns that complement the foundational layer.
+        3. **LAYER 3: Integrated Synthesis (Prediction).** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`. This score represents the system's best **prediction** of risk.
+        4. **LAYER 4: Prescriptive Optimization (Prescription).** The `Integrated_Risk_Score` and `Expected Incident Volume` are fed into an Operations Research (OR) engine. This layer moves beyond prediction to **prescription**, determining the *optimal* real-world action to take (e.g., ambulance allocation) to best mitigate the predicted risk.
+        """)
+
+    with st.expander("II. The Prediction Engine: A Multi-Model Deep Dive", expanded=False):
+        st.info("#### Core Principle: Different questions require different tools. No single model can capture all facets of urban risk.", icon="💡")
         
-        with st.expander("IV. Incident-Specific Model Weighting", expanded=False):
-            st.markdown("""
-            The system is not one-size-fits-all. The final `Integrated_Risk_Score` is a weighted sum of many model outputs, and these weights are dynamically influenced by the nature of the risk being assessed.
-
-            #### **Trauma - Violence**
-            *   **Primary Predictive Models:** **Hawkes Processes** are paramount, as they explicitly model the retaliatory, self-exciting nature of violence. **GNN Structural Risk** is also critical for identifying long-term territorial hotspots.
-            -   **Objective:** To capture the self-exciting, retaliatory nature of violent crime, where one incident significantly increases the probability of another nearby.
-                -   **Overall Relevance:** This is the primary driver for short-term, high-intensity violence prediction, making it critical for proactive patrol and resource staging.
-                -   **Mathematical Formulation:** The conditional intensity `λ(t)` is:
-                    $$
-                    \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
-                    $$
-                    where `μ(t)` is the background rate, `α` is the strength of aftershocks, and `g()` is the decay function.
-
-            *   **Primary Prescriptive Model:** **NLP** is often preferred to not only cover risk but also to avoid over-saturating one area, which can be crucial in fluid tactical situations.
-            -   **Objective:** To allocate resources in a way that is robust to the fluid and rapidly changing tactical situation common in violence response.
-                -   **Overall Relevance:** The NLP model's ability to handle diminishing returns prevents over-saturating a single hotspot, ensuring flexible coverage across multiple potential flashpoints.
-            
-            *   **Primary Predictive Model: Graph Laplacians**
-                -   **Objective:** To model how traffic congestion and blockages from one incident "spill over" and increase accident risk in adjacent areas.
-                -   **Overall Relevance:** This is critical for predicting secondary incidents caused by the disruption of a primary one.
-                -   **Mathematical Formulation:** A discrete step of the heat diffusion equation on the city graph:
-                    $$
-                    r(t+1) = (I - \\epsilon L) r(t)
-                    $$
-                    where `L` is the graph Laplacian, modeling the flow of "risk pressure".
-                    
-            #### **Trauma - Accidents**
-            *   **Primary Predictive Models:** **Bayesian Networks** (incorporating weather and traffic) and **Graph Laplacians** (modeling spillover from congestion) are the key drivers.
-            *   **Primary Prescriptive Model:** **NLP** is highly effective here as its built-in congestion penalty directly models the real-world consequence of traffic jams, leading to smarter staging decisions.
-
-            #### **Medical Emergencies**
-            *   **Primary Predictive Models:** **Bayesian Networks** are crucial for incorporating environmental factors like heatwaves and air quality. Spatiotemporal models analyzing population density and demographics (e.g., age) are also key.
-            -   **Objective:** To probabilistically fuse multiple, distinct causal factors for accidents, such as weather, traffic, and events.
-                -   **Overall Relevance:** It provides a clear, interpretable model for how environmental conditions elevate accident risk system-wide.
-                -   **Mathematical Formulation:** It uses the chain rule of probability: $P(X_1, ..., X_n) = \\prod_{i=1}^{n} P(X_i | \\text{Parents}(X_i))$, allowing for inference on `P(Accident | Weather, TrafficLevel)`.
-
-            *   **Primary Prescriptive Model:** The choice of model is heavily influenced by **Hospital Divert Status**. When hospitals are under strain, the prescriptive models must weigh not just the risk of an incident, but the added travel time and risk of delay upon arrival, a factor that NLP can incorporate more naturally.
-            """)
-
-        with st.expander("V. Key Performance Indicator (KPI) Glossary", expanded=False):
-            kpi_defs = {
-                "Integrated Risk Score": "**The final, primary risk metric** used for all decisions, blending foundational and advanced AI models. **Objective:** To create the single, unified, actionable risk score by blending the baseline with advanced AI signals. **Overall Relevance:** This is the primary output of the predictive engine and drives all downstream tasks. **Mathematical Formulation:** A weighted linear combination:
-                    $$
-                    R_{int} = \\alpha R_{ens} + \\beta R_{stgp} + \\gamma R_{gnn} + \\delta R_{tension} + ...
-                    $$
-                -   **Mathematical Relevance:** A hierarchical ensemble that combines a stable base with specialized, sensitive signals for a balanced and powerful final prediction.,
-              
-                "Ensemble Risk Score": "Blended risk score from the foundational (Layer 1) models."  -   **Objective:** To combine signals from foundational models into a stable baseline risk assessment.
-                -   **Overall Relevance:** It provides a robust, interpretable "first-pass" risk score.
-                -   **Mathematical Formulation:** A weighted average of normalized model outputs:
-                    $$
-                    R_{ens} = \\sum_{k=1}^{K} w_k \\cdot \\text{normalize}(M_k)
-                    $$
-                -   **Mathematical Relevance:** A classic model ensembling technique to reduce variance and improve robustness.
-,
-                "GNN Structural Risk": "A zone's intrinsic vulnerability due to its position in the road network.-   **Objective:** To identify long-term, endemic hotspots of violence based on their inherent network properties, independent of recent events.
-                -   **Overall Relevance:** It provides a stable, foundational layer of risk, preventing the system from ignoring historically dangerous areas that are momentarily quiet.
-                -   **Mathematical Formulation (PageRank):** A zone `zᵢ`'s importance is calculated iteratively based on the importance of its neighbors:
-                    $$
-                    PR(z_i) = \\frac{1-d}{N} + d \\sum_{z_j \\in N(z_i)} \\frac{PR(z_j)}{|N(z_j)|}
-                    $$", 
-                "STGP Risk": "Risk from proximity to recent, severe incidents (spatiotemporal correlation)."-   **Objective:** To quantify risk from proximity to recent, severe incidents, assuming risk decays smoothly over space and time.
-                -   **Overall Relevance:** It provides a more fluid, less-blocky view of risk that respects geographical closeness over arbitrary zone boundaries.
-                -   **Mathematical Formulation:** The posterior mean of a Spatiotemporal Gaussian Process, `f(s,t) ~ GP(m, k)`, conditioned on recent incident locations.
-                -   **Mathematical Relevance:** A non-parametric Bayesian method that provides a statistically powerful way to perform spatiotemporal interpolation.,
-               
-                "Game Theory Tension": "A measure of a zone's contribution to system-wide resource competition."-   **Objective:** To measure how much a single zone contributes to the overall "competition" for limited EMS resources.
-                -   **Overall Relevance:** It identifies which zones are the primary drivers of system-wide strain.
-                -   **Mathematical Formulation:** A heuristic capturing the interaction between risk and demand:
-                    $$
-                    T_i = R_i \\times E_i
-                    $$
-                -   **Mathematical Relevance:** It acts as a proxy for a zone's "bidding power" in a conceptual resource competition, prioritizing areas where the consequences of under-resourcing are highest.,
-               
-                "Chaos Sensitivity Score": Measures system volatility and fragility. High score = 'The system is unstable.'"-   **Objective:** To provide an early warning of system instability.
-                -   **Overall Relevance:** It's the system's "check engine light." High risk + high chaos is a volatile, unpredictable crisis in the making.
-                -   **Mathematical Formulation (Heuristic):** A practical proxy for the Largest Lyapunov Exponent, calculated from the log of the mean absolute difference in the time series of incident counts: `log(mean(|count(t) - count(t-1)|))`.
-                -   **Mathematical Relevance:** Applies a core concept from dynamical systems theory to provide a meta-level insight into the system's state (its rate of change and volatility).,
+        st.markdown("---")
+        st.markdown("#### **A. Stochastic & Statistical Models (The 'When')**")
+        st.markdown("""
+        * **Non-Homogeneous Poisson Process (NHPP):** This model forms the temporal backbone of our predictions. It understands that incident rates are not constant.
+            - **Question it Answers:** *"What is the baseline probability of an incident at 3 AM on a Tuesday versus 6 PM on a Friday?"*
+            - **Relevance:** Captures the predictable, cyclical nature of urban life, ensuring our baseline risk is sensitive to the time of day and day of the week.
+            - **Mathematical Formulation:** The intensity function `λ(t)` is modeled as a function of time, often using a log-linear model with Fourier terms to capture cyclicity:
+                $$
+                \\lambda(t) = \\exp\\left( \\beta_0 + \\sum_{k=1}^{K} \\left[ \\beta_k \\cos\\left(\\frac{2\\pi kt}{T}\\right) + \\gamma_k \\sin\\left(\\frac{2\\pi kt}{T}\\right) \\right] \\right)
+                $$
+                where `β` and `γ` are coefficients learned from historical data and `T` is the period of the cycle (e.g., 24 hours or 168 hours).
                 
-                "Anomaly Score": "Measures the 'strangeness' of the current incident pattern compared to history."-   **Objective:** To quantify how "strange" the current spatial pattern of incidents is compared to the historical norm.
-                -   **Overall Relevance:** It detects novel threats or unusual shifts in behavior that would be missed by looking at volume alone.
-                -   **Mathematical Formulation (KL Divergence):**
-                    $$
-                    D_{KL}(P || Q) = \\sum_{z} P(z) \\log{\\frac{P(z)}{Q(z)}}
-                    $$
-                -   **Mathematical Relevance:** A fundamental metric from information theory measuring the "surprise" when moving from a prior distribution (history) to a posterior one (today).,
-               
-                "Resource Adequacy Index": "System-wide ratio of available units to expected demand, penalized by hospital strain. -   **Objective:** To provide a single, holistic measure of the EMS system's ability to meet the currently predicted demand.
-                -   **Overall Relevance:** A top-line metric for commanders. A score of 60% indicates the system is severely overstretched.
-                -   **Mathematical Formulation:** A ratio of supply to demand, penalized by system strain factors:
-                    $$
-                    RAI = \\frac{\\text{AvailableUnits}}{\\sum E_i \\times (1 + k_{hosp} \\cdot \\text{HospDivert} + k_{traf} \\cdot \\text{Traffic})}
-                    $$
-                -   **Mathematical Relevance:** A practical, operational metric that directly synthesizes predictive outputs (`Σ Eᵢ`) with real-time system status variables into an actionable health score."
-            }
-            for kpi, definition in kpi_defs.items():
-                c1, c2 = st.columns([1, 2])
-                with c1:
-                    st.markdown(f"**{kpi}**")
-                with c2:
-                    st.markdown(definition)
-                st.markdown("---", unsafe_allow_html=True)
+        * **Hawkes Process (Self-Exciting Point Process):** This is the cornerstone of our violence and cascading accident models. It operates on the principle that certain events can trigger "aftershocks."
+            - **Question it Answers:** *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* or *"After a major highway collision, what is the increased likelihood of secondary accidents due to traffic build-up?"*
+            - **Relevance:** Critical for modeling retaliatory gang violence and chain-reaction traffic incidents. It directly powers the `Trauma Clustering Score`.
+            - **Mathematical Formulation:** The conditional intensity `λ(t)` of an event at time `t` is defined as:
+                $$
+                \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
+                $$
+                where `μ(t)` is the background rate from the NHPP, the sum is over past event times `tᵢ`, `α` is the branching ratio (strength of aftershock), and `g(t - tᵢ)` is the triggering kernel modeling the decaying influence of past events.
+
+        * **Bayesian Networks:** These models represent our understanding of causal relationships. They combine static base rates with real-time environmental factors.
+            - **Question it Answers:** *"How does a public holiday, combined with rainy weather and a major concert, collectively influence the probability of an incident?"*
+            - **Relevance:** Allows the system to reason with expert knowledge and adapt to contextual factors like `Weather`, `Is Holiday`, and `Major Event`. It is a core driver of the baseline `Incident Probability`.
+            - **Mathematical Formulation:** Based on the chain rule of probability, where the joint probability is the product of conditional probabilities: $P(X_1, ..., X_n) = \\prod_{i=1}^{n} P(X_i | \\text{Parents}(X_i))$. Our network models `P(IncidentRate | Weather, Holiday, ...)` to find the most likely baseline rate.
+        """)
+        
+        st.markdown("---")
+        st.markdown("#### **B. Spatiotemporal & Graph Models (The 'Where' and 'How It Spreads')**")
+        st.markdown("""
+        * **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this advanced technique. It models risk as a continuous fluid over the map.
+            - **Question it Answers:** *"An incident occurred 500 meters from this zone's border. How much 'risk pressure' does that exert on this zone?"*
+            - **Relevance:** Interpolates risk intelligently across the map, ensuring that proximity to danger is always accounted for, even across arbitrary zone boundaries.
+            - **Mathematical Formulation:** The risk `f` at a spatiotemporal point `(s, t)` is modeled as a draw from a Gaussian Process:
+                $$
+                f(s, t) \\sim \\mathcal{GP}(m(s, t), k((s, t), (s', t')))
+                $$
+                where `m(s, t)` is the mean function and `k` is a spatiotemporal kernel, often a product of a spatial kernel (like RBF) and a temporal kernel:
+                $$
+                k((s, t), (s', t')) = \\sigma^2 \\exp\\left(-\\frac{\\|s-s'\|^2}{2l_s^2}\\right) \\exp\\left(-\\frac{|t-t'|^2}{2l_t^2}\\right)
+                $$
+                The lengthscales `l_s` and `l_t` control the "range" of influence in space and time.
+       
+        * **Graph Neural Networks (GNNs):** The city's road network and zone adjacencies are treated as a complex graph. A GNN learns a deep, structural understanding of each zone's role within this network.
+            - **Question it Answers:** *"Is this zone inherently vulnerable simply due to its position as a major crossroads, regardless of recent events?"*
+            - **Relevance:** Identifies long-term, structural vulnerabilities that may not be apparent from recent incident data alone. It powers the `GNN_Structural_Risk`, representing a zone's intrinsic risk.
+            - **Mathematical Formulation (GCN Layer):** A GNN works by passing "messages" between connected nodes. A common layer operation is:
+                $$
+                H^{(l+1)} = \\sigma(\\hat{D}^{-\\frac{1}{2}} \\hat{A} \\hat{D}^{-\\frac{1}{2}} H^{(l)} W^{(l)})
+                $$
+                This means the new features for a node (`H^(l+1)`) are a transformed aggregate of its neighbors' previous features (`H^(l)`), where `Â` is the adjacency matrix with self-loops, `D̂` is its degree matrix, `W` is a learnable weight matrix, and `σ` is an activation function.
+       
+        * **Graph Laplacian Diffusion:** This technique models how effects (like traffic, panic, or police cordons) "spill over" from one zone to its neighbors through the road network.
+            - **Question it Answers:** *"A major fire has shut down three blocks in Zone A. How does this increase the traffic-related accident risk in the adjacent Zone B?"*
+            - **Relevance:** Essential for modeling the secondary effects of major incidents. It directly calculates the `Spatial Spillover Risk`.
+            - **Mathematical Formulation:** The process is modeled by the heat diffusion equation on a graph. A single discrete step of this process is:
+                $$
+                r(t+1) = (I - \\epsilon L) r(t)
+                $$
+                where `r(t)` is the vector of zone risks, `I` is the identity matrix, `ε` is a small step size, and `L` is the normalized graph Laplacian matrix.
+        """)
+
+        st.markdown("---")
+        st.markdown("#### **C. Complexity & Information Theory (The 'System State')**")
+        st.markdown("""
+        * **Lyapunov Exponents (Chaos Sensitivity Score):** A concept from Chaos Theory that measures a system's sensitivity to small changes. A high score means the system is in a fragile, unpredictable state.
+            - **Question it Answers:** *"Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?"*
+            - **Relevance:** This is a critical "instability alarm" for command staff. It doesn't predict a specific incident, but warns that the entire system is volatile.
+            - **Mathematical Formulation (Conceptual):** It measures the exponential rate of divergence of nearby trajectories. If `δ(t)` is the separation between two trajectories over time, the largest Lyapunov exponent `λ` is estimated by:
+                $$
+                \\lambda \\approx \\frac{1}{t} \\ln \\frac{\\| \\delta(t) \\|}{\\| \\delta(0) \\|}
+                $$
+                A positive `λ` is an indicator of chaos.
+        * **Kullback-Leibler (KL) Divergence (Anomaly Score):** An information theory metric that measures how much the current pattern of incidents deviates from the historical norm.
+            - **Question it Answers:** *"Are we seeing the right number of incidents, but in all the wrong places today? Or are we seeing a bizarre new type of incident we've never seen before?"*
+            - **Relevance:** Detects "pattern anomalies" that simple volume-based metrics would miss. A high score is a clear signal that "today is not a normal day."
+            - **Mathematical Formulation:**
+                $$
+                D_{KL}(P || Q) = \\sum_{z \\in \\text{Zones}} P(z) \\log{\\frac{P(z)}{Q(z)}}
+                $$
+        """)
+
+    with st.expander("III. The Prescription Engine: Optimal Resource Allocation", expanded=False):
+        st.info("#### Core Principle: Moving from 'what will happen' to 'what is the best thing to do'.", icon="🎯")
+        st.markdown("""
+        The prescriptive engine uses the risk scores from the prediction layer as inputs into sophisticated Operations Research models. This ensures that resource allocation is not just intuitive, but mathematically optimal based on our objectives.
+
+        * **Mixed-Integer Linear Programming (MILP):** This is the workhorse for `Linear Optimal` allocation. It finds the provably best way to assign a whole number of ambulances to zones.
+            - **Objective:** Maximize the total amount of risk "covered" across the entire city.
+            - **Relevance:** Excellent for finding the most efficient solution under a single, clear objective. It is fast and guarantees a mathematically optimal result for a linear problem.
+            - **Mathematical Formulation (Simplified):**
+                $$
+                \\begin{aligned}
+                & \\text{maximize} && \\sum_{i \\in \\text{Zones}} R_i \\cdot c_i \\\\
+                & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i \\leq N, \\quad c_i \\in \\mathbb{Z}^+
+                \\end{aligned}
+                $$
+                where `Rᵢ` is the risk score for zone `i`, `cᵢ` is the integer number of ambulances assigned, and `N` is the total available.
+        * **Non-Linear Programming (NLP):** This is our most advanced model for `Non-Linear Optimal` allocation. It captures complex, real-world dynamics that linear models miss.
+            - **Objective:** Minimize a "system dissatisfaction" function, which includes two key non-linear effects:
+                1. **Diminishing Returns (Logarithmic Utility):** The first ambulance sent to a zone provides a huge benefit; the fifth provides much less. The model understands this and avoids over-saturating a single high-risk zone if another zone has zero coverage.
+                2. **Congestion Penalties (Quadratic Penalty):** As the number of expected incidents in a zone vastly outpaces the allocated units, the "harm" (e.g., response time delay) grows exponentially, not linearly.
+            - **Relevance:** This provides the most realistic and robust recommendations. It makes intelligent trade-offs that a human or a simpler model might miss, leading to a more resilient overall system posture.
+            - **Mathematical Formulation (Simplified):**
+                $$
+                \\begin{aligned}
+                & \\text{minimize} && \\sum_{i \\in \\text{Zones}} \\left( w_1(R_i - R_i \\log(1+c_i)) + w_2 \\left( \\frac{E_i}{1+c_i} \\right)^2 \\right) \\\\
+                & \\text{subject to} && \\sum_{i \\in \\text{Zones}} c_i = N, \\quad c_i \\geq 0
+                \\end{aligned}
+                $$
+                where `Eᵢ` is expected incidents, the `log` term models **diminishing returns**, and the quadratic term models **congestion penalties**.
+        * **Queueing Theory:** This mathematical theory is conceptually used to model system strain, particularly at hospitals.
+            - **Relevance:** By understanding arrival rates (from our predictions) and service rates, we can better estimate wait times and the impact of hospital diversions, which feeds into the `Resource Adequacy Index`.
+            - **Objective:** To mathematically model and predict wait times, congestion, and the probability of system saturation (e.g., at a hospital ER).
+            - **Overall Relevance in the System:** Queueing theory provides a robust, theoretical foundation for the `Resource Adequacy Index` and informs routing decisions. Instead of a simple penalty for a busy hospital, it allows the system to calculate the *actual expected delay*, leading to smarter assignments.
+            - **The Question it Answers:** "If we send another ambulance to Hospital X, what is the probability it will have to wait more than 15 minutes to offload the patient, given their current patient load and our predicted arrival rate of new incidents?"
+            - **Mathematical Formulation (M/M/c Model):** For a system with `c` servers (e.g., ER beds), a Poisson arrival rate `λ` (from our incident predictions), and an exponential service rate `μ`, the probability of an arriving patient having to wait is given by the Erlang-C formula:
+                $$
+                P_{\text{wait}} = C(c, \lambda/\mu) = \frac{(\lambda/\mu)^c / c!}{ ((\lambda/\mu)^c / c!) + (1 - \lambda/(c\mu)) \sum_{k=0}^{c-1} (\lambda/\mu)^k / k!}
+                $$
+            - **Mathematical Relevance:** This is a cornerstone of Operations Research, providing a powerful analytical framework to understand and optimize stochastic systems defined by random arrivals and service times, which perfectly describes an emergency response network.
+        """)
+
+    with st.expander("IV. Incident-Specific Model Weighting", expanded=False):
+        st.markdown("""
+        The system is not one-size-fits-all. The final `Integrated_Risk_Score` is a weighted sum of many model outputs, and these weights are dynamically influenced by the nature of the risk being assessed.
+
+        #### **Trauma - Violence**
+        * **Primary Predictive Models:** **Hawkes Processes** are paramount, as they explicitly model the retaliatory, self-exciting nature of violence. **GNN Structural Risk** is also critical for identifying long-term territorial hotspots.
+            - **Objective:** To capture the self-exciting, retaliatory nature of violent crime, where one incident significantly increases the probability of another nearby.
+            - **Overall Relevance:** This is the primary driver for short-term, high-intensity violence prediction, making it critical for proactive patrol and resource staging.
+            - **Mathematical Formulation:** The conditional intensity `λ(t)` is:
+                $$
+                \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
+                $$
+                where `μ(t)` is the background rate, `α` is the strength of aftershocks, and `g()` is the decay function.
+
+        * **Primary Prescriptive Model:** **NLP** is often preferred to not only cover risk but also to avoid over-saturating one area, which can be crucial in fluid tactical situations.
+            - **Objective:** To allocate resources in a way that is robust to the fluid and rapidly changing tactical situation common in violence response.
+            - **Overall Relevance:** The NLP model's ability to handle diminishing returns prevents over-saturating a single hotspot, ensuring flexible coverage across multiple potential flashpoints.
+        
+        * **Primary Predictive Model: Graph Laplacians**
+            - **Objective:** To model how traffic congestion and blockages from one incident "spill over" and increase accident risk in adjacent areas.
+            - **Overall Relevance:** This is critical for predicting secondary incidents caused by the disruption of a primary one.
+            - **Mathematical Formulation:** A discrete step of the heat diffusion equation on the city graph:
+                $$
+                r(t+1) = (I - \\epsilon L) r(t)
+                $$
+                where `L` is the graph Laplacian, modeling the flow of "risk pressure".
+                
+        #### **Trauma - Accidents**
+        * **Primary Predictive Models:** **Bayesian Networks** (incorporating weather and traffic) and **Graph Laplacians** (modeling spillover from congestion) are the key drivers.
+        * **Primary Prescriptive Model:** **NLP** is highly effective here as its built-in congestion penalty directly models the real-world consequence of traffic jams, leading to smarter staging decisions.
+
+        #### **Medical Emergencies**
+        * **Primary Predictive Models:** **Bayesian Networks** are crucial for incorporating environmental factors like heatwaves and air quality. Spatiotemporal models analyzing population density and demographics (e.g., age) are also key.
+            - **Objective:** To probabilistically fuse multiple, distinct causal factors for accidents, such as weather, traffic, and events.
+            - **Overall Relevance:** It provides a clear, interpretable model for how environmental conditions elevate accident risk system-wide.
+            - **Mathematical Formulation:** It uses the chain rule of probability: $P(X_1, ..., X_n) = \\prod_{i=1}^{n} P(X_i | \\text{Parents}(X_i))$, allowing for inference on `P(Accident | Weather, TrafficLevel)`.
+
+        * **Primary Prescriptive Model:** The choice of model is heavily influenced by **Hospital Divert Status**. When hospitals are under strain, the prescriptive models must weigh not just the risk of an incident, but the added travel time and risk of delay upon arrival, a factor that NLP can incorporate more naturally.
+        """)
+
+    with st.expander("V. Key Performance Indicator (KPI) Glossary", expanded=False):
+        kpi_defs = {
+            "Integrated Risk Score": """
+            **The final, primary risk metric** used for all decisions, blending foundational and advanced AI models.
+            - **Objective:** To create the single, unified, actionable risk score by blending the baseline with advanced AI signals.
+            - **Overall Relevance:** This is the primary output of the predictive engine and drives all downstream tasks.
+            - **Mathematical Formulation:** A weighted linear combination:
+                $$
+                R_{int} = \\alpha R_{ens} + \\beta R_{stgp} + \\gamma R_{gnn} + \\delta R_{tension} + ...
+                $$
+            - **Mathematical Relevance:** A hierarchical ensemble that combines a stable base with specialized, sensitive signals for a balanced and powerful final prediction.
+            """,
+            "Ensemble Risk Score": """
+            Blended risk score from the foundational (Layer 1) models.
+            - **Objective:** To combine signals from foundational models into a stable baseline risk assessment.
+            - **Overall Relevance:** It provides a robust, interpretable "first-pass" risk score.
+            - **Mathematical Formulation:** A weighted average of normalized model outputs:
+                $$
+                R_{ens} = \\sum_{k=1}^{K} w_k \\cdot \\text{normalize}(M_k)
+                $$
+            - **Mathematical Relevance:** A classic model ensembling technique to reduce variance and improve robustness.
+            """,
+            "GNN Structural Risk": """
+            A zone's intrinsic vulnerability due to its position in the road network.
+            - **Objective:** To identify long-term, endemic hotspots of violence based on their inherent network properties, independent of recent events.
+            - **Overall Relevance:** It provides a stable, foundational layer of risk, preventing the system from ignoring historically dangerous areas that are momentarily quiet.
+            - **Mathematical Formulation (PageRank):** A zone `zᵢ`'s importance is calculated iteratively based on the importance of its neighbors:
+                $$
+                PR(z_i) = \\frac{1-d}{N} + d \\sum_{z_j \\in N(z_i)} \\frac{PR(z_j)}{|N(z_j)|}
+                $$
+            """,
+            "STGP Risk": """
+            Risk from proximity to recent, severe incidents (spatiotemporal correlation).
+            - **Objective:** To quantify risk from proximity to recent, severe incidents, assuming risk decays smoothly over space and time.
+            - **Overall Relevance:** It provides a more fluid, less-blocky view of risk that respects geographical closeness over arbitrary zone boundaries.
+            - **Mathematical Formulation:** The posterior mean of a Spatiotemporal Gaussian Process, `f(s,t) ~ GP(m, k)`, conditioned on recent incident locations.
+            - **Mathematical Relevance:** A non-parametric Bayesian method that provides a statistically powerful way to perform spatiotemporal interpolation.
+            """,
+            "Game Theory Tension": """
+            A measure of a zone's contribution to system-wide resource competition.
+            - **Objective:** To measure how much a single zone contributes to the overall "competition" for limited EMS resources.
+            - **Overall Relevance:** It identifies which zones are the primary drivers of system-wide strain.
+            - **Mathematical Formulation:** A heuristic capturing the interaction between risk and demand:
+                $$
+                T_i = R_i \\times E_i
+                $$
+            - **Mathematical Relevance:** It acts as a proxy for a zone's "bidding power" in a conceptual resource competition, prioritizing areas where the consequences of under-resourcing are highest.
+            """,
+            "Chaos Sensitivity Score": """
+            Measures system volatility and fragility. High score = 'The system is unstable.'
+            - **Objective:** To provide an early warning of system instability.
+            - **Overall Relevance:** It's the system's "check engine light." High risk + high chaos is a volatile, unpredictable crisis in the making.
+            - **Mathematical Formulation (Heuristic):** A practical proxy for the Largest Lyapunov Exponent, calculated from the log of the mean absolute difference in the time series of incident counts: `log(mean(|count(t) - count(t-1)|))`.
+            - **Mathematical Relevance:** Applies a core concept from dynamical systems theory to provide a meta-level insight into the system's state (its rate of change and volatility).
+            """,
+            "Anomaly Score": """
+            Measures the 'strangeness' of the current incident pattern compared to history.
+            - **Objective:** To quantify how "strange" the current spatial pattern of incidents is compared to the historical norm.
+            - **Overall Relevance:** It detects novel threats or unusual shifts in behavior that would be missed by looking at volume alone.
+            - **Mathematical Formulation (KL Divergence):**
+                $$
+                D_{KL}(P || Q) = \\sum_{z} P(z) \\log{\\frac{P(z)}{Q(z)}}
+                $$
+            - **Mathematical Relevance:** A fundamental metric from information theory measuring the "surprise" when moving from a prior distribution (history) to a posterior one (today).
+            """,
+            "Resource Adequacy Index": """
+            System-wide ratio of available units to expected demand, penalized by hospital strain.
+            - **Objective:** To provide a single, holistic measure of the EMS system's ability to meet the currently predicted demand.
+            - **Overall Relevance:** A top-line metric for commanders. A score of 60% indicates the system is severely overstretched.
+            - **Mathematical Formulation:** A ratio of supply to demand, penalized by system strain factors:
+                $$
+                RAI = \\frac{\\text{AvailableUnits}}{\\sum E_i \\times (1 + k_{hosp} \\cdot \\text{HospDivert} + k_{traf} \\cdot \\text{Traffic})}
+                $$
+            - **Mathematical Relevance:** A practical, operational metric that directly synthesizes predictive outputs (`Σ Eᵢ`) with real-time system status variables into an actionable health score.
+            """
+        }
+        for kpi, definition in kpi_defs.items():
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**{kpi}**")
+            with c2:
+                st.markdown(definition)
+            st.markdown("---", unsafe_allow_html=True)
 
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame, zone_name: str):
         zone_data = kpi_df[kpi_df['Zone'] == zone_name].iloc[0]
