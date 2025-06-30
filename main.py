@@ -170,14 +170,19 @@ class Dashboard:
         col1, col2 = st.columns([3, 2])
         with col1:
             st.subheader("Live Operations Map")
-            map_object = self._render_dynamic_map(
+            # --- CORRECTED: Caching logic moved to a dedicated data prep function ---
+            map_data = self._prepare_map_data(
                 kpi_df=st.session_state.kpi_df,
-                incidents=st.session_state.current_incidents,
-                _zones_gdf=self.dm.zones_gdf,
-                _ambulances=self.dm.ambulances,
+                _zones_gdf=self.dm.zones_gdf
             )
-            if map_object:
-                st_folium(map_object, use_container_width=True, height=600)
+            if map_data is not None:
+                map_object = self._render_dynamic_map(
+                    map_gdf=map_data,
+                    incidents=st.session_state.current_incidents,
+                    _ambulances=self.dm.ambulances,
+                )
+                if map_object:
+                    st_folium(map_object, use_container_width=True, height=600)
         with col2:
             st.subheader("Decision Support")
             self._plot_system_pressure_gauge()
@@ -209,16 +214,20 @@ class Dashboard:
             logger.error(f"Error rendering status bar: {e}", exc_info=True)
             st.warning(f"Could not render system status bar: {e}")
 
-    @st.cache_data(show_spinner="Rendering Operations Map...")
-    def _render_dynamic_map(_self, kpi_df: pd.DataFrame, incidents: List[Dict], _zones_gdf: gpd.GeoDataFrame, _ambulances: Dict) -> Optional[folium.Map]:
-        if _zones_gdf.empty or kpi_df.empty or 'Zone' not in kpi_df.columns:
-            st.warning("Map data not yet available."); return None
+    # --- CORRECTED CACHING STRATEGY ---
+    @st.cache_data
+    def _prepare_map_data(_self, kpi_df: pd.DataFrame, _zones_gdf: gpd.GeoDataFrame) -> Optional[gpd.GeoDataFrame]:
+        """Prepares and caches the GeoDataFrame needed for map rendering."""
+        if _zones_gdf.empty or kpi_df.empty:
+            return None
+        map_gdf = _zones_gdf.join(kpi_df.set_index('Zone'), on='name')
+        map_gdf.reset_index(inplace=True)
+        return map_gdf
+
+    def _render_dynamic_map(self, map_gdf: gpd.GeoDataFrame, incidents: List[Dict], _ambulances: Dict) -> Optional[folium.Map]:
+        """Renders the Folium map using pre-prepared, cached data. This function itself is NOT cached."""
         try:
-            map_gdf = _zones_gdf.join(kpi_df.set_index('Zone'), on='name')
-            # --- CORRECTED: Reset the index so 'name' becomes a column for Folium ---
-            map_gdf.reset_index(inplace=True)
-            
-            center = _zones_gdf.union_all().centroid
+            center = map_gdf.unary_union.centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=11, tiles="cartodbpositron", prefer_canvas=True)
             folium.Choropleth(
                 geo_data=map_gdf, data=map_gdf, columns=['name', 'Integrated_Risk_Score'],
@@ -240,7 +249,7 @@ class Dashboard:
             folium.LayerControl().add_to(m)
             return m
         except Exception as e:
-            logger.error(f"Failed to render map: {e}", exc_info=True)
+            logger.error(f"Failed to render map from prepared data: {e}", exc_info=True)
             st.error(f"Error rendering map: {e}")
             return None
 
@@ -301,13 +310,10 @@ class Dashboard:
             fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score", size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18, hover_data={'Zone':False, 'Ensemble Risk Score':':.3f', 'GNN_Structural_Risk':':.3f'})
             fig.update_traces(hovertemplate="<b>Zone: %{hovertext}</b><br><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>")
             fig.add_vline(x=x_m, line_width=1, line_dash="dash", line_color="grey"); fig.add_hline(y=y_m, line_width=1, line_dash="dash", line_color="grey")
-            
-            # --- CORRECTED: Combined font arguments into a single dictionary per call ---
             base_anno = {'showarrow': False}
             fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red", 'size':12}, **base_anno)
             fig.add_annotation(x=x_m/2, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy", 'size':12}, **base_anno)
             fig.add_annotation(x=x_m*1.5, y=y_m/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange", 'size':12}, **base_anno)
-            
             fig.update_layout(xaxis_title="Dynamic Risk", yaxis_title="Structural Vulnerability", coloraxis_colorbar_title_text='Integrated<br>Risk')
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
