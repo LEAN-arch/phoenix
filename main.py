@@ -1200,6 +1200,57 @@ class Dashboard:
             logger.info("EnvFactors updated, triggering rerun.")
             st.session_state.env_factors = new_env
             st.rerun()
+#####NEW SNIPPET TO CONTROL INCIDENTS 
+                with st.sidebar.expander("Scenario Simulation", expanded=True):
+            st.markdown("Manually adjust system load and resource levels to test 'what-if' scenarios.")
+            
+            # --- Control for Number of Incidents ---
+            # We get the current number of incidents to set as the default
+            current_incident_count = len(st.session_state.get('current_incidents', []))
+            
+            new_incident_count = st.number_input(
+                "Set Number of Active Incidents",
+                min_value=0,
+                value=current_incident_count,
+                step=1,
+                help="Override the live data feed to simulate a different number of active incidents across the city."
+            )
+
+            # If the user changes the number, we generate a new set of synthetic incidents
+            if new_incident_count != current_incident_count:
+                # Use the modified method in DataManager to generate a specific number of incidents
+                st.session_state.current_incidents = self.dm._generate_synthetic_incidents(
+                    st.session_state.env_factors, override_count=new_incident_count
+                )
+                logger.info(f"User simulated new scenario with {new_incident_count} incidents.")
+                st.rerun()
+
+            # --- Control for Number of Ambulances ---
+            # Get the total number of ambulances in the fleet
+            total_ambulances = len(self.dm.ambulances)
+            
+            new_ambulance_count = st.number_input(
+                "Set Number of Available Ambulances",
+                min_value=0,
+                max_value=total_ambulances, # Cannot have more available than total
+                value=sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'),
+                step=1,
+                help=f"Adjust the number of available units from the total fleet of {total_ambulances}."
+            )
+
+            # If the user changes the number, we update the status of the ambulances in the DataManager
+            current_available_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+            if new_ambulance_count != current_available_ambulances:
+                # This is a simplified logic. A real system might have more complex state management.
+                # We'll make the first 'n' ambulances available and the rest 'En Misión'.
+                for i, amb_id in enumerate(self.dm.ambulances.keys()):
+                    if i < new_ambulance_count:
+                        self.dm.ambulances[amb_id]['status'] = 'Disponible'
+                    else:
+                        self.dm.ambulances[amb_id]['status'] = 'En Misión'
+                logger.info(f"User simulated new scenario with {new_ambulance_count} available ambulances.")
+                st.rerun()
+                ####END OF ADDITION
         st.sidebar.divider()
         st.sidebar.header("Data & Reporting")
         self._sidebar_file_uploader()
