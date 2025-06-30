@@ -340,7 +340,6 @@ class Dashboard:
             x_threshold = kpi_df['Ensemble Risk Score'].quantile(0.75)
             y_threshold = kpi_df['GNN_Structural_Risk'].quantile(0.75)
             
-            # --- CORRECTED: Use the pandas Series .max() method ---
             max_incidents = max(kpi_df['Expected Incident Volume'].max(), 1)
             sizeref = 2. * max_incidents / (40.**2)
 
@@ -349,11 +348,11 @@ class Dashboard:
             # --- Background Quadrant Shading for immediate visual context ---
             x_max = kpi_df['Ensemble Risk Score'].max() * 1.1
             y_max = kpi_df['GNN_Structural_Risk'].max() * 1.1
-            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=y_threshold, x1=x_max, y1=y_max, fillcolor="rgba(211, 47, 47, 0.1)", line_width=0, layer="below")
-            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=0, x1=x_max, y1=y_threshold, fillcolor="rgba(251, 192, 45, 0.1)", line_width=0, layer="below")
-            fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=y_threshold, x1=x_threshold, y1=y_max, fillcolor="rgba(30, 136, 229, 0.1)", line_width=0, layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=y_threshold, x1=x_max, y1=y_max, fillcolor="rgba(229, 57, 53, 0.07)", line_width=0, layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=0, x1=x_max, y1=y_threshold, fillcolor="rgba(255, 179, 0, 0.07)", line_width=0, layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=y_threshold, x1=x_threshold, y1=y_max, fillcolor="rgba(25, 118, 210, 0.07)", line_width=0, layer="below")
 
-            # --- Scatter plot with enhanced markers ---
+            # --- Scatter plot with enhanced markers and a more engaging color scale ---
             fig.add_trace(go.Scatter(
                 x=kpi_df['Ensemble Risk Score'],
                 y=kpi_df['GNN_Structural_Risk'],
@@ -362,11 +361,19 @@ class Dashboard:
                     size=kpi_df['Expected Incident Volume'],
                     sizemode='area',
                     sizeref=sizeref,
-                    sizemin=5,
+                    sizemin=6,
+                    # --- Color Enhancement: Using a vibrant, perceptually uniform scale ---
                     color=kpi_df['Integrated_Risk_Score'],
-                    colorscale='Reds',
+                    colorscale='Plasma', 
                     showscale=True,
-                    colorbar=dict(title='Total<br>Risk', x=1.1, thickness=15)
+                    colorbar=dict(
+                        title='Total<br>Risk',
+                        x=1.15,
+                        thickness=20,
+                        tickfont=dict(size=10)
+                    ),
+                    # --- Aesthetic Enhancement: Add a line to make markers pop ---
+                    line=dict(width=1, color='DarkSlateGrey')
                 ),
                 customdata=kpi_df['Zone'],
                 hovertemplate="<b>Zone: %{customdata}</b><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>"
@@ -381,11 +388,10 @@ class Dashboard:
                     mode='text',
                     text=crisis_zones['Zone'],
                     textposition="top center",
-                    textfont=dict(size=10, color="#B71C1C", family="Arial Black"),
+                    textfont=dict(size=10, color="#333", family="Arial Black"),
                     showlegend=False,
                     hoverinfo='none'
                 ))
-
 
             # --- Quadrant Lines and Annotations ---
             fig.add_vline(x=x_threshold, line_width=1.5, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
