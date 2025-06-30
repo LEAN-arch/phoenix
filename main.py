@@ -523,7 +523,7 @@ class Dashboard:
             
             fig = go.Figure()
 
-            # Background Quadrant Colors for intuitive interpretation
+            # Background Quadrant Colors for Intuitive Interpretation
             fig.add_shape(type="rect", xref="paper", yref="paper", x0=0.5, y0=0.5, x1=1, y1=1, line=dict(width=0), fillcolor="rgba(211, 47, 47, 0.1)", layer="below")
             fig.add_shape(type="rect", xref="paper", yref="paper", x0=0, y0=0.5, x1=0.5, y1=1, line=dict(width=0), fillcolor="rgba(30, 136, 229, 0.1)", layer="below")
             
@@ -590,7 +590,7 @@ class Dashboard:
         [SME VISUALIZATION] Plots a Threat Vector Analysis chart (comet chart).
         This elegant design shows current magnitude, historical position, and trajectory with high-impact visuals.
         """
-        st.markdown("**Analysis:** This chart reveals the trajectory of risk for the top zones. The **large colored dot** shows the current risk (hotter is higher). The **line and arrow** show the 'threat vector' from 6 hours ago. A **bright red arrow** indicates rapidly worsening conditions, demanding immediate attention.")
+        st.markdown("**Analysis:** This chart reveals the trajectory of risk for the top zones. The **large colored dot** is the current risk. The **small grey dot** is the risk 6 hours ago. The connecting line and arrow show the path, or 'threat vector'. A **vibrant red arrow** indicates rapidly worsening conditions, demanding immediate attention.")
         try:
             top_zones_df = kpi_df.nlargest(10, 'Integrated_Risk_Score')
             risk_now = top_zones_df[['Zone', 'Integrated_Risk_Score']].set_index('Zone')
@@ -599,76 +599,82 @@ class Dashboard:
             
             plot_data = risk_now.join(risk_6hr_ago.rename(columns={'Integrated_Risk_Score': 'Risk_6hr_ago'}))
             plot_data = plot_data.sort_values('Integrated_Risk_Score', ascending=False).reset_index()
+            plot_data['Momentum'] = plot_data['Integrated_Risk_Score'] - plot_data['Risk_6hr_ago']
 
             fig = go.Figure()
             
-            # --- High-Impact Action Colors ---
-            INCREASING_COLOR = "#FF4136"  # A vibrant, alarming red
-            DECREASING_COLOR = "#0074D9"  # A clear, calming blue
+            # --- High-Contrast Action Colors ---
+            INCREASING_COLOR = "#D32F2F"  # Material Design Red
+            DECREASING_COLOR = "#1976D2"  # Material Design Blue
 
-            # Add segments and arrows in a single loop for efficiency
+            # Add segments and arrows in a single loop
             for i, row in plot_data.iterrows():
-                is_increasing = row['Integrated_Risk_Score'] > row['Risk_6hr_ago']
+                is_increasing = row['Momentum'] > 0
                 arrow_color = INCREASING_COLOR if is_increasing else DECREASING_COLOR
-                # Add line segment
-                fig.add_shape(type='line', x0=row['Risk_6hr_ago'], y0=row['Zone'], x1=row['Integrated_Risk_Score'], y1=row['Zone'], line=dict(color='#666', width=1))
-                # Add arrow annotation
-                fig.add_annotation(
-                    ax=row['Risk_6hr_ago'], ay=row['Zone'], axref='x', ayref='y',
-                    x=row['Integrated_Risk_Score'], y=row['Zone'], xref='x', yref='y',
-                    showarrow=True, arrowhead=3, arrowsize=1.5, arrowwidth=2,
-                    arrowcolor=arrow_color
-                )
+                # Line segment (comet tail)
+                fig.add_shape(type='line', x0=row['Risk_6hr_ago'], y0=row['Zone'], x1=row['Integrated_Risk_Score'], y1=row['Zone'], line=dict(color='#B0BEC5', width=2))
+                # Arrowhead
+                fig.add_annotation(ax=row['Risk_6hr_ago'], ay=row['Zone'], axref='x', ayref='y',
+                                   x=row['Integrated_Risk_Score'], y=row['Zone'], xref='x', yref='y',
+                                   showarrow=True, arrowhead=2, arrowsize=1.5, arrowwidth=2, arrowcolor=arrow_color)
 
-            # Add historical points (small, neutral)
+            # Trace for the historical points
             fig.add_trace(go.Scatter(
                 x=plot_data['Risk_6hr_ago'], y=plot_data['Zone'],
-                mode='markers', marker=dict(color='#B0B0B0', size=7),
-                name='6 Hrs Ago', hoverinfo='none'
+                mode='markers', name='6 Hrs Ago',
+                marker=dict(color='#78909C', size=8),
+                hovertemplate="<b>Zone:</b> %{y}<br><b>Past Risk:</b> %{x:.3f}<extra></extra>"
             ))
 
-            # Add current points (large, colored by current risk magnitude)
-            plot_data['momentum'] = plot_data['Integrated_Risk_Score'] - plot_data['Risk_6hr_ago']
+            # Trace for the current points, with color opacity encoding magnitude
+            def get_rgba(is_increasing, risk_score):
+                base_color = '211, 47, 47' if is_increasing else '25, 118, 210'
+                opacity = 0.4 + (risk_score * 0.6) # Scale opacity from 0.4 to 1.0
+                return f'rgba({base_color}, {opacity})'
+
+            plot_data['marker_color'] = [get_rgba(row['Momentum'] > 0, row['Integrated_Risk_Score']) for i, row in plot_data.iterrows()]
+            
             fig.add_trace(go.Scatter(
                 x=plot_data['Integrated_Risk_Score'], y=plot_data['Zone'],
-                mode='markers',
+                mode='markers', name='Current',
                 marker=dict(
-                    color=plot_data['Integrated_Risk_Score'],
-                    colorscale='Hot',  # A more intense, attention-grabbing scale
-                    reversescale=True,
-                    cmin=0, cmax=1,
-                    colorbar=dict(title='Current<br>Risk', len=0.8, y=0.5, thickness=15),
-                    size=18,
-                    symbol='circle',
-                    line=dict(width=1.5, color='white') # White line for better pop on dark colors
+                    color=plot_data['marker_color'],
+                    size=16,
+                    line=dict(width=1, color='rgba(0,0,0,0.6)')
                 ),
-                name='Current Risk',
-                customdata=plot_data['momentum'],
+                customdata=plot_data['Momentum'],
                 hovertemplate="<b>Zone:</b> %{y}<br><b>Current Risk:</b> %{x:.3f}<br><b>Momentum (6hr):</b> %{customdata:+.3f}<extra></extra>"
             ))
 
+            # --- Final Layout Polish for a professional, "mission control" feel ---
             fig.update_layout(
                 title_text="<b>Threat Vector Analysis</b>",
                 title_x=0.5,
-                title_font=dict(size=20, color='white', family="Arial, sans-serif"),
-                xaxis_title="Integrated Risk Score",
-                yaxis_title=None,
+                title_font=dict(size=20, family="Arial, sans-serif"),
+                xaxis_title="Integrated Risk Score", yaxis_title=None,
                 height=550,
-                paper_bgcolor='#1E1E1E', # Dark theme for a "mission control" feel
-                plot_bgcolor='#282828',
-                showlegend=False,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=True,
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    traceorder="normal",
+                    font=dict(size=12, color="#333"),
+                    bgcolor='rgba(255,255,255,0.5)',
+                    bordercolor="rgba(0,0,0,0.1)",
+                    borderwidth=1
+                ),
                 yaxis=dict(
                     autorange="reversed",
                     showgrid=True,
-                    gridcolor='#444',
-                    tickfont=dict(color='white')
+                    gridcolor='rgba(221, 221, 221, 0.5)'
                 ),
                 xaxis=dict(
-                    gridcolor='#444',
-                    zeroline=False,
-                    tickfont=dict(color='white'),
-                    title_font=dict(color='white')
-                )
+                    showgrid=True,
+                    gridcolor='rgba(221, 221, 221, 0.5)',
+                    zeroline=False
+                ),
+                margin=dict(l=80, r=40, t=100, b=80)
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
