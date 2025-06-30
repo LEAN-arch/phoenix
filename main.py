@@ -452,7 +452,7 @@ class Dashboard:
             st.info("Advanced visualizations unavailable: Waiting for data...")
 
                 # --- Add the new visual summary here ---
-        def _render_key_risk_indicators(self, kpi_df: pd.DataFrame):
+    def _render_key_risk_indicators(self, kpi_df: pd.DataFrame):
         """
         [SME VISUALIZATION] Renders a sophisticated, scannable summary of Key Risk Indicators
         for the top zones, replacing a standard table with a more intuitive visual display.
