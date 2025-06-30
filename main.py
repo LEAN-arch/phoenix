@@ -1201,8 +1201,8 @@ class Dashboard:
             st.session_state.env_factors = new_env
             st.rerun()
 #####NEW SNIPPET TO CONTROL INCIDENTS 
-            with st.sidebar.expander("Scenario Simulation", expanded=True):
-            st.markdown("Manually adjust system load and resource levels to test 'what-if' scenarios.")
+    with st.sidebar.expander("Scenario Simulation", expanded=True):
+        st.markdown("Manually adjust system load and resource levels to test 'what-if' scenarios.")
             
             # --- Control for Number of Incidents ---
             # We get the current number of incidents to set as the default
