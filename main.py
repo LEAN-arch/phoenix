@@ -342,69 +342,70 @@ class Dashboard:
             
             fig = go.Figure()
 
-            # --- Add traces for each quadrant to control layering and hover behavior ---
-            quadrant_data = {
-                "Crisis": kpi_df[(kpi_df['Ensemble Risk Score'] >= x_threshold) & (kpi_df['GNN_Structural_Risk'] >= y_threshold)],
-                "Acute": kpi_df[(kpi_df['Ensemble Risk Score'] >= x_threshold) & (kpi_df['GNN_Structural_Risk'] < y_threshold)],
-                "Latent": kpi_df[(kpi_df['Ensemble Risk Score'] < x_threshold) & (kpi_df['GNN_Structural_Risk'] >= y_threshold)],
-                "Stable": kpi_df[(kpi_df['Ensemble Risk Score'] < x_threshold) & (kpi_df['GNN_Structural_Risk'] < y_threshold)]
-            }
+            # --- Background Quadrant Shading for immediate visual context ---
+            x_max, y_max = kpi_df['Ensemble Risk Score'].max()*1.1, kpi_df['GNN_Structural_Risk'].max()*1.1
+            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=y_threshold, x1=x_max, y1=y_max, fillcolor="rgba(211, 47, 47, 0.1)", line_width=0, layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=x_threshold, y0=0, x1=x_max, y1=y_threshold, fillcolor="rgba(251, 192, 45, 0.1)", line_width=0, layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=y_threshold, x1=x_threshold, y1=y_max, fillcolor="rgba(30, 136, 229, 0.1)", line_width=0, layer="below")
 
-            colors = {"Crisis": "#B71C1C", "Acute": "#FBC02D", "Latent": "#1565C0", "Stable": "#558B2F"}
+            # --- Scatter plot with enhanced markers ---
+            fig.add_trace(go.Scatter(
+                x=kpi_df['Ensemble Risk Score'],
+                y=kpi_df['GNN_Structural_Risk'],
+                mode='markers', # Text will be added selectively
+                marker=dict(
+                    size=kpi_df['Expected Incident Volume'],
+                    sizemode='area',
+                    sizeref=2.*max(kpi_df['Expected Incident Volume'], 1)/(40.**2),
+                    sizemin=5,
+                    color=kpi_df['Integrated_Risk_Score'],
+                    colorscale='Reds',
+                    showscale=True,
+                    colorbar=dict(title='Total<br>Risk', x=1.1, thickness=15)
+                ),
+                customdata=kpi_df['Zone'],
+                hovertemplate="<b>Zone: %{customdata}</b><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>"
+            ))
             
-            for status, df_quad in quadrant_data.items():
-                if not df_quad.empty:
-                    fig.add_trace(go.Scatter(
-                        x=df_quad['Ensemble Risk Score'],
-                        y=df_quad['GNN_Structural_Risk'],
-                        mode='markers+text',
-                        marker=dict(
-                            size=df_quad['Expected Incident Volume'],
-                            sizemode='area',
-                            sizeref=2.*max(kpi_df['Expected Incident Volume'], 1)/(40.**2),
-                            sizemin=6,
-                            color=colors[status],
-                            line=dict(width=1, color='white'),
-                            opacity=0.8
-                        ),
-                        text=df_quad['Zone'] if status == "Crisis" else "", # Only label the most critical zones
-                        textposition="top center",
-                        textfont=dict(size=10, color=colors[status], family="Arial Black"),
-                        name=status,
-                        customdata=df_quad['Integrated_Risk_Score'],
-                        hovertemplate="<b>Zone: %{text}</b><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<br><b>Total Risk: %{customdata:.3f}</b><extra></extra>"
-                    ))
+            # --- Selective Labeling for Critical Zones ---
+            crisis_zones = kpi_df[(kpi_df['Ensemble Risk Score'] >= x_threshold) & (kpi_df['GNN_Structural_Risk'] >= y_threshold)]
+            if not crisis_zones.empty:
+                fig.add_trace(go.Scatter(
+                    x=crisis_zones['Ensemble Risk Score'],
+                    y=crisis_zones['GNN_Structural_Risk'],
+                    mode='text',
+                    text=crisis_zones['Zone'],
+                    textposition="top center",
+                    textfont=dict(size=10, color="#B71C1C", family="Arial Black"),
+                    showlegend=False,
+                    hoverinfo='none'
+                ))
 
-            # --- Add quadrant lines and annotations with a clean, modern aesthetic ---
-            fig.add_vline(x=x_threshold, line_width=1, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
-            fig.add_hline(y=y_threshold, line_width=1, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
 
-            anno_defaults = dict(xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="rgba(0,0,0,0.4)"))
-            fig.add_annotation(x=1, y=1, text="<b>CRISIS ZONES</b><br>High Dynamic, High Structural", xanchor='right', yanchor='top', align='right', **anno_defaults)
-            fig.add_annotation(x=1, y=0, text="<b>ACUTE HOTSPOTS</b><br>High Dynamic, Low Structural", xanchor='right', yanchor='bottom', align='right', **anno_defaults)
-            fig.add_annotation(x=0, y=1, text="<b>LATENT THREATS</b><br>Low Dynamic, High Structural", xanchor='left', yanchor='top', align='left', **anno_defaults)
-            fig.add_annotation(x=0, y=0, text="STABLE ZONES", xanchor='left', yanchor='bottom', align='left', **anno_defaults)
+            # --- Quadrant Lines and Annotations ---
+            fig.add_vline(x=x_threshold, line_width=1.5, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
+            fig.add_hline(y=y_threshold, line_width=1.5, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
+
+            # CORRECTED and IMPROVED Annotations
+            anno_defaults = dict(xref="paper", yref="paper", showarrow=False, font=dict(family="Arial, sans-serif", size=11, color="rgba(0,0,0,0.5)"))
+            fig.add_annotation(x=0.98, y=0.98, text="<b>CRISIS ZONES</b><br>(High Dynamic, High Structural)", xanchor='right', yanchor='top', align='right', **anno_defaults)
+            fig.add_annotation(x=0.98, y=0.02, text="<b>ACUTE HOTSPOTS</b><br>(High Dynamic, Low Structural)", xanchor='right', yanchor='bottom', align='right', **anno_defaults)
+            fig.add_annotation(x=0.02, y=0.98, text="<b>LATENT THREATS</b><br>(Low Dynamic, High Structural)", xanchor='left', yanchor='top', align='left', **anno_defaults)
+            fig.add_annotation(x=0.02, y=0.02, text="STABLE ZONES", xanchor='left', yanchor='bottom', align='left', **anno_defaults)
 
             # --- Final Layout Polish for a professional, "mission control" feel ---
             fig.update_layout(
                 title_text="<b>Strategic Risk Matrix</b>",
                 title_x=0.5,
                 title_font=dict(size=20, family="Arial, sans-serif"),
-                xaxis_title="Dynamic Risk (Real-time Threat) →",
-                yaxis_title="Structural Vulnerability (Intrinsic Threat) →",
+                xaxis_title="Dynamic Risk (Events & Recency) →",
+                yaxis_title="Structural Vulnerability (Intrinsic) →",
                 height=550,
-                plot_bgcolor='rgba(248, 248, 252, 1)',
+                plot_bgcolor='white',
                 paper_bgcolor='white',
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom", y=1.02,
-                    xanchor="right", x=1,
-                    title=None,
-                    font=dict(size=12)
-                ),
-                xaxis=dict(gridcolor='rgba(0,0,0,0.1)', zeroline=False, range=[0, kpi_df['Ensemble Risk Score'].max() * 1.1]),
-                yaxis=dict(gridcolor='rgba(0,0,0,0.1)', zeroline=False, range=[0, kpi_df['GNN_Structural_Risk'].max() * 1.1]),
+                showlegend=False,
+                xaxis=dict(gridcolor='#e5e5e5', zeroline=False, range=[0, kpi_df['Ensemble Risk Score'].max() * 1.1]),
+                yaxis=dict(gridcolor='#e5e5e5', zeroline=False, range=[0, kpi_df['GNN_Structural_Risk'].max() * 1.1]),
                 margin=dict(l=80, r=40, t=100, b=80)
             )
             st.plotly_chart(fig, use_container_width=True)
