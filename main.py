@@ -303,38 +303,112 @@ class Dashboard:
         else:
             st.info("Insufficient data for advanced plots.")
 
+# In main.py, replace the existing _render_methodology_tab method
+
     def _render_methodology_tab(self):
         st.header("System Architecture & Methodology")
-        st.markdown("""
-        ### I. High-Level Goal & Architectural Philosophy
-        The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** to a **proactive, predictive posture**. We anticipate where incidents will likely emerge and pre-position resources to minimize response times and maximize impact.
-        To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
-        #### The Three Analytical Layers:
-        1.  **LAYER 1: Foundational Ensemble.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks) that create a robust baseline understanding of risk, producing the `Ensemble_Risk_Score`.
-        2.  **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, GNNs, Game Theory) to capture deeper, nuanced patterns.
-        3.  **LAYER 3: Integrated Synthesis.** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`, which drives all final recommendations.
-        """)
-        with st.expander("II. Detailed Methodology Breakdown", expanded=False):
+        st.markdown("This section provides a deep dive into the analytical engine powering the Phoenix v4.0 platform. It is designed for data scientists, analysts, and command staff who wish to understand the 'why' behind the system's predictions and prescriptions.")
+
+        with st.expander("I. Architectural Philosophy: From Prediction to Prescription", expanded=True):
             st.markdown("""
-            #### **I. Stochastic & Statistical Modeling**
-            *   **Non-Homogeneous Poisson Process (NHPP):** Models the time-varying baseline incident rate (`μ`), capturing predictable daily and weekly patterns.
-            *   **Hawkes Process (Self-Exciting):** The core of our trauma/violence clustering models. It assumes some events can trigger "aftershocks."
-            *   **Marked Point Processes:** Each incident is treated as a "marked" event with metadata (e.g., `type: 'Trauma'`), allowing models to respond selectively.
-            
-            #### **II. Spatiotemporal & Graph Models**
-            *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` is a proxy. It interpolates risk intelligently across the map.
-            *   **Graph Laplacians (`Spatial Spillover Risk`):** Models the city's road network as a graph to simulate how risk and chaos can diffuse.
-            *   **Graph Neural Networks (GNNs):** Our `GNN_Structural_Risk` is a proxy. A GNN learns a zone's inherent vulnerability based on its position in the network.
-            
-            #### **III. Operations Research & Prescriptive Analytics**
-            *   **Mixed-Integer Linear Programming (MILP):** Used for `Linear Optimal` allocation. It finds the best assignment of ambulances to maximize risk coverage under real-world constraints (e.g., total units available).
-            *   **Non-Linear Programming (NLP):** Used for `Non-Linear Optimal` allocation. This more advanced model captures real-world effects like **diminishing returns** (the 1st ambulance in a zone is more valuable than the 5th) and **congestion penalties**. It provides the most realistic and robust recommendations.
-            *   **Queueing Theory:** Conceptually used to model system strain, such as hospital ER wait times, which penalizes the overall system adequacy.
+            The fundamental goal of RedShield AI: Phoenix v4.0 is to engineer a paradigm shift in emergency response—from a traditional **reactive model** (dispatching units after an incident occurs) to a **proactive, prescriptive posture** (anticipating where incidents are likely to emerge and prescriptively positioning resources to minimize response times and maximize impact).
+
+            To achieve this, the system is built on a philosophy of **Hierarchical Ensemble Modeling**. Instead of relying on a single "black box" algorithm, Phoenix v4.0 integrates a diverse portfolio of analytical techniques in a layered, "glass box" architecture. This creates a highly robust and resilient system where the weaknesses of any one model are offset by the strengths of others.
+
+            The architecture is composed of four primary layers:
+            1.  **LAYER 1: Foundational Models.** Consists of well-established statistical models (Hawkes Processes, Bayesian Networks, Graph Laplacians) that create a robust baseline understanding of risk. This produces the `Ensemble_Risk_Score`.
+            2.  **LAYER 2: Advanced AI & Complexity Proxies.** Introduces computationally inexpensive but powerful proxies for cutting-edge models (ST-GPs, HMMs, GNNs) to capture deeper, more nuanced patterns that complement the foundational layer.
+            3.  **LAYER 3: Integrated Synthesis (Prediction).** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`. This score represents the system's best **prediction** of risk.
+            4.  **LAYER 4: Prescriptive Optimization (Prescription).** The `Integrated_Risk_Score` and `Expected Incident Volume` are fed into an Operations Research (OR) engine. This layer moves beyond prediction to **prescription**, determining the *optimal* real-world action to take (e.g., ambulance allocation) to best mitigate the predicted risk.
             """)
-        with st.expander("III. Key Performance Indicator (KPI) Glossary", expanded=False):
+
+        with st.expander("II. The Prediction Engine: A Multi-Model Deep Dive", expanded=False):
+            st.info("#### Core Principle: Different questions require different tools. No single model can capture all facets of urban risk.", icon="💡")
+            
+            st.markdown("---")
+            st.markdown("#### **A. Stochastic & Statistical Models (The 'When')**")
+            st.markdown("""
+            *   **Non-Homogeneous Poisson Process (NHPP):** This model forms the temporal backbone of our predictions. It understands that incident rates are not constant.
+                -   **Question it Answers:** *"What is the baseline probability of an incident at 3 AM on a Tuesday versus 6 PM on a Friday?"*
+                -   **Relevance:** Captures the predictable, cyclical nature of urban life, ensuring our baseline risk is sensitive to the time of day and day of the week.
+
+            *   **Hawkes Process (Self-Exciting Point Process):** This is the cornerstone of our violence and cascading accident models. It operates on the principle that certain events can trigger "aftershocks."
+                -   **Question it Answers:** *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* or *"After a major highway collision, what is the increased likelihood of secondary accidents due to traffic build-up?"*
+                -   **Relevance:** Critical for modeling retaliatory gang violence and chain-reaction traffic incidents. It directly powers the `Trauma Clustering Score`.
+
+            *   **Bayesian Networks:** These models represent our understanding of causal relationships. They combine static base rates with real-time environmental factors.
+                -   **Question it Answers:** *"How does a public holiday, combined with rainy weather and a major concert, collectively influence the probability of an incident?"*
+                -   **Relevance:** Allows the system to reason with expert knowledge and adapt to contextual factors like `Weather`, `Is Holiday`, and `Major Event`. It is a core driver of the baseline `Incident Probability`.
+            """)
+            
+            st.markdown("---")
+            st.markdown("#### **B. Spatiotemporal & Graph Models (The 'Where' and 'How It Spreads')**")
+            st.markdown("""
+            *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this advanced technique. It models risk as a continuous fluid over the map.
+                -   **Question it Answers:** *"An incident occurred 500 meters from this zone's border. How much 'risk pressure' does that exert on this zone?"*
+                -   **Relevance:** Interpolates risk intelligently across the map, ensuring that proximity to danger is always accounted for, even across arbitrary zone boundaries.
+
+            *   **Graph Neural Networks (GNNs):** The city's road network and zone adjacencies are treated as a complex graph. A GNN learns a deep, structural understanding of each zone's role within this network.
+                -   **Question it Answers:** *"Is this zone inherently vulnerable simply due to its position as a major crossroads, regardless of recent events?"*
+                -   **Relevance:** Identifies long-term, structural vulnerabilities that may not be apparent from recent incident data alone. It powers the `GNN_Structural_Risk`, representing a zone's intrinsic risk.
+            
+            *   **Graph Laplacian Diffusion:** This technique models how effects (like traffic, panic, or police cordons) "spill over" from one zone to its neighbors through the road network.
+                -   **Question it Answers:** *"A major fire has shut down three blocks in Zone A. How does this increase the traffic-related accident risk in the adjacent Zone B?"*
+                -   **Relevance:** Essential for modeling the secondary effects of major incidents. It directly calculates the `Spatial Spillover Risk`.
+            """)
+
+            st.markdown("---")
+            st.markdown("#### **C. Complexity & Information Theory (The 'System State')**")
+            st.markdown("""
+            *   **Lyapunov Exponents (Chaos Sensitivity Score):** A concept from Chaos Theory that measures a system's sensitivity to small changes. A high score means the system is in a fragile, unpredictable state.
+                -   **Question it Answers:** *"Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?"*
+                -   **Relevance:** This is a critical "instability alarm" for command staff. It doesn't predict a specific incident, but warns that the entire system is volatile.
+
+            *   **Kullback-Leibler (KL) Divergence (Anomaly Score):** An information theory metric that measures how much the current pattern of incidents deviates from the historical norm.
+                -   **Question it Answers:** *"Are we seeing the right number of incidents, but in all the wrong places today? Or are we seeing a bizarre new type of incident we've never seen before?"*
+                -   **Relevance:** Detects "pattern anomalies" that simple volume-based metrics would miss. A high score is a clear signal that "today is not a normal day."
+            """)
+
+        with st.expander("III. The Prescription Engine: Optimal Resource Allocation", expanded=False):
+            st.info("#### Core Principle: Moving from 'what will happen' to 'what is the best thing to do'.", icon="🎯")
+            st.markdown("""
+            The prescriptive engine uses the risk scores from the prediction layer as inputs into sophisticated Operations Research models. This ensures that resource allocation is not just intuitive, but mathematically optimal based on our objectives.
+
+            *   **Mixed-Integer Linear Programming (MILP):** This is the workhorse for `Linear Optimal` allocation. It finds the provably best way to assign a whole number of ambulances to zones.
+                -   **Objective:** Maximize the total amount of risk "covered" across the entire city.
+                -   **Relevance:** Excellent for finding the most efficient solution under a single, clear objective. It is fast and guarantees a mathematically optimal result for a linear problem.
+
+            *   **Non-Linear Programming (NLP):** This is our most advanced model for `Non-Linear Optimal` allocation. It captures complex, real-world dynamics that linear models miss.
+                -   **Objective:** Minimize a "system dissatisfaction" function, which includes two key non-linear effects:
+                    1.  **Diminishing Returns (Logarithmic Utility):** The first ambulance sent to a zone provides a huge benefit; the fifth provides much less. The model understands this and avoids over-saturating a single high-risk zone if another zone has zero coverage.
+                    2.  **Congestion Penalties (Quadratic Penalty):** As the number of expected incidents in a zone vastly outpaces the allocated units, the "harm" (e.g., response time delay) grows exponentially, not linearly.
+                -   **Relevance:** This provides the most realistic and robust recommendations. It makes intelligent trade-offs that a human or a simpler model might miss, leading to a more resilient overall system posture.
+            
+            *   **Queueing Theory:** This mathematical theory is conceptually used to model system strain, particularly at hospitals.
+                -   **Relevance:** By understanding arrival rates (from our predictions) and service rates, we can better estimate wait times and the impact of hospital diversions, which feeds into the `Resource Adequacy Index`.
+            """)
+        
+        with st.expander("IV. Incident-Specific Model Weighting", expanded=False):
+            st.markdown("""
+            The system is not one-size-fits-all. The final `Integrated_Risk_Score` is a weighted sum of many model outputs, and these weights are dynamically influenced by the nature of the risk being assessed.
+
+            #### **Trauma - Violence**
+            *   **Primary Predictive Models:** **Hawkes Processes** are paramount, as they explicitly model the retaliatory, self-exciting nature of violence. **GNN Structural Risk** is also critical for identifying long-term territorial hotspots.
+            *   **Primary Prescriptive Model:** **NLP** is often preferred to not only cover risk but also to avoid over-saturating one area, which can be crucial in fluid tactical situations.
+
+            #### **Trauma - Accidents**
+            *   **Primary Predictive Models:** **Bayesian Networks** (incorporating weather and traffic) and **Graph Laplacians** (modeling spillover from congestion) are the key drivers.
+            *   **Primary Prescriptive Model:** **NLP** is highly effective here as its built-in congestion penalty directly models the real-world consequence of traffic jams, leading to smarter staging decisions.
+
+            #### **Medical Emergencies**
+            *   **Primary Predictive Models:** **Bayesian Networks** are crucial for incorporating environmental factors like heatwaves and air quality. Spatiotemporal models analyzing population density and demographics (e.g., age) are also key.
+            *   **Primary Prescriptive Model:** The choice of model is heavily influenced by **Hospital Divert Status**. When hospitals are under strain, the prescriptive models must weigh not just the risk of an incident, but the added travel time and risk of delay upon arrival, a factor that NLP can incorporate more naturally.
+            """)
+
+        with st.expander("V. Key Performance Indicator (KPI) Glossary", expanded=False):
             kpi_defs = {
                 "Integrated Risk Score": "**The final, primary risk metric** used for all decisions, blending foundational and advanced AI models.",
-                "Ensemble Risk Score": "Blended risk score from the foundational (Layer 1) statistical models.",
+                "Ensemble Risk Score": "Blended risk score from the foundational (Layer 1) models.",
                 "GNN Structural Risk": "A zone's intrinsic vulnerability due to its position in the road network.",
                 "STGP Risk": "Risk from proximity to recent, severe incidents (spatiotemporal correlation).",
                 "Game Theory Tension": "A measure of a zone's contribution to system-wide resource competition.",
@@ -343,7 +417,12 @@ class Dashboard:
                 "Resource Adequacy Index": "System-wide ratio of available units to expected demand, penalized by hospital strain."
             }
             for kpi, definition in kpi_defs.items():
-                st.markdown(f"**{kpi}**: {definition}")
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    st.markdown(f"**{kpi}**")
+                with c2:
+                    st.markdown(definition)
+                st.markdown("---", unsafe_allow_html=True)
 
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame, zone_name: str):
         zone_data = kpi_df[kpi_df['Zone'] == zone_name].iloc[0]
