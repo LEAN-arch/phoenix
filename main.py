@@ -1067,9 +1067,9 @@ class Dashboard:
                 - **Overall Relevance in the System:** Queueing theory provides a robust, theoretical foundation for the `Resource Adequacy Index` and informs routing decisions. Instead of a simple penalty for a busy hospital, it allows the system to calculate the *actual expected delay*, leading to smarter assignments.
                 - **The Question it Answers:** "If we send another ambulance to Hospital X, what is the probability it will have to wait more than 15 minutes to offload the patient, given their current patient load and our predicted arrival rate of new incidents?"
                 - **Mathematical Formulation (M/M/c Model):** For a system with `c` servers (e.g., ER beds), a Poisson arrival rate `λ` (from our incident predictions), and an exponential service rate `μ`, the probability of an arriving patient having to wait is given by the Erlang-C formula:
-                    $$
-                    P_{\text{wait}} = C(c, \lambda/\mu) = \frac{(\lambda/\mu)^c / c!}{ ((\lambda/\mu)^c / c!) + (1 - \lambda/(c\mu)) \sum_{k=0}^{c-1} (\lambda/\mu)^k / k!}
-                    $$
+                    st.latex(r'''
+                    P_{\text{wait}} = C(c, \lambda/\mu) = \frac{\frac{(\lambda/\mu)^c}{c!}}{ \left(\sum_{k=0}^{c-1} \frac{(\lambda/\mu)^k}{k!}\right) + \frac{(\lambda/\mu)^c}{c! (1 - \frac{\lambda}{c\mu})}}
+                    ''')
                 - **Mathematical Relevance:** This is a cornerstone of Operations Research, providing a powerful analytical framework to understand and optimize stochastic systems defined by random arrivals and service times, which perfectly describes an emergency response network.
             """)
 
