@@ -687,7 +687,7 @@ class Dashboard:
         [SME VISUALIZATION] Plots a detailed Risk Composition Profile.
         This dissects the anatomy of risk for critical zones, guiding the type of response.
         """
-        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. Each bar is normalized to 100%, showing the proportional contribution of Violence, Accidents, or Medical surges to that zone's specific risk profile. This is crucial for dispatching the right *type* of support.")
+        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. The **colored segments** show the proportional contribution of each risk driver. The **grey lollipop marker** on the right shows the absolute `Integrated_Risk_Score`, providing crucial context on the overall magnitude of the threat.")
         try:
             risk_cols = ['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score']
             if not all(col in kpi_df.columns for col in risk_cols): st.error("Data missing for Zone Anatomy plot."); return
@@ -696,11 +696,12 @@ class Dashboard:
             
             # Normalize the risk components for each zone
             df_top['total_component_risk'] = df_top[risk_cols].sum(axis=1) + 1e-9 # Avoid division by zero
+            df_norm = df_top.copy()
             for col in risk_cols:
-                df_top[col] = (df_top[col] / df_top['total_component_risk']) * 100
+                df_norm[col] = (df_top[col] / df_top['total_component_risk']) * 100
 
             # Sort by total integrated risk for a clear hierarchy
-            df_top = df_top.sort_values('Integrated_Risk_Score', ascending=False)
+            df_norm = df_norm.sort_values('Integrated_Risk_Score', ascending=True)
             
             fig = go.Figure()
             
@@ -709,51 +710,59 @@ class Dashboard:
             for risk_type, color in colors.items():
                 col_name = f"{risk_type} Clustering Score" if risk_type != 'Medical' else 'Medical Surge Score'
                 fig.add_trace(go.Bar(
-                    y=df_top['Zone'],
-                    x=df_top[col_name],
+                    y=df_norm['Zone'],
+                    x=df_norm[col_name],
                     name=risk_type,
                     orientation='h',
-                    marker=dict(color=color, line=dict(color='white', width=1)),
-                    text=df_top[col_name].apply(lambda x: f'{x:.0f}%' if x > 5 else ''),
+                    marker=dict(color=color, line=dict(color='white', width=1.5)),
+                    text=df_norm[col_name].apply(lambda x: f'{x:.0f}%' if x > 10 else ''), # Only show significant percentages
                     textposition='inside',
                     insidetextanchor='middle',
-                    hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Type:</b> %{name}<br><b>Composition:</b> %{x:.1f}%<extra></extra>"
+                    insidetextfont=dict(color='white', size=11, family='Arial Black'),
+                    hovertemplate="<b>%{y}</b><br>%{name}: %{x:.1f}%<extra></extra>"
                 ))
 
-            # Add annotations for the total Integrated Risk Score on the right
-            for i, row in df_top.iterrows():
-                fig.add_annotation(
-                    xref='paper', yref='y',
-                    x=1.01, y=row['Zone'],
-                    text=f"<b>{row['Integrated_Risk_Score']:.2f}</b>",
-                    showarrow=False,
-                    font=dict(size=12, color='#333'),
-                    align="left"
-                )
+            # Add a secondary axis for the absolute Integrated Risk Score
+            fig.add_trace(go.Scatter(
+                x=[105] * len(df_norm), # Position to the right of the 100% bar
+                y=df_norm['Zone'],
+                mode='markers+text',
+                marker=dict(color='#607D8B', size=10, symbol='circle', line=dict(width=1, color='white')),
+                text=df_norm['Integrated_Risk_Score'].apply(lambda x: f'{x:.2f}'),
+                textposition="middle right",
+                textfont=dict(size=12, color='#37474F'),
+                hovertemplate="<b>%{y}</b><br>Total Risk: %{text}<extra></extra>",
+                showlegend=False
+            ))
+            
+            # Add line segments for the "lollipop" effect
+            for i, row in df_norm.iterrows():
+                 fig.add_shape(type='line', x0=100, y0=row['Zone'], x1=105, y1=row['Zone'], line=dict(color='#B0BEC5', width=1.5))
+
 
             fig.update_layout(
                 barmode='stack',
-                title_text="<b>Risk Composition Profile of Critical Zones</b>",
+                title_text="<b>Risk Anatomy of Critical Zones</b>",
                 title_x=0.5,
                 xaxis=dict(
-                    title='Risk Composition (%)',
                     showgrid=False,
                     showline=False,
                     showticklabels=False,
                     zeroline=False,
+                    range=[0, 115] # Extend range to accommodate annotations
                 ),
                 yaxis=dict(
                     showgrid=False,
                     showline=False,
                     showticklabels=True,
-                    autorange="reversed",
                     title=None,
                 ),
                 height=500,
                 plot_bgcolor='white',
+                paper_bgcolor='white',
                 legend_title_text='Risk Driver',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(r=50, t=80) # Add margin for annotations and title
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font_size=12),
+                margin=dict(t=80, b=40, l=40, r=40)
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
