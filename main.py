@@ -376,7 +376,9 @@ class Dashboard:
             logger.error(f"Failed to render map from prepared data: {e}", exc_info=True)
             st.error(f"Error rendering map: {e}")
             return None
-
+        # --- SME ADDITION: Add the Key Risk Indicator Profiles to the bottom of the page ---
+        st.divider()
+        self._render_key_risk_indicators(st.session_state.kpi_df)
     def _plot_system_pressure_gauge(self):
         try:
             kpi_df, env = st.session_state.kpi_df, st.session_state.env_factors
@@ -409,7 +411,93 @@ class Dashboard:
             st.markdown("**How to Read:** Grey bar is risk (demand). Colored bar is coverage (supply).")
         except Exception as e:
             logger.error(f"Error in adequacy plot: {e}", exc_info=True); st.warning("Could not display Resource Adequacy plot.")
+            #RENDERING OF VIOLENCE MEDICAL RISK
+    def _render_key_risk_indicators(self, kpi_df: pd.DataFrame):
+        """
+        [SME VISUALIZATION] Renders a sophisticated, scannable summary of Key Risk Indicators
+        for the top zones, replacing a standard table with a more intuitive visual display.
+        """
+        st.subheader("Key Risk Profiles")
+        st.markdown("A visual summary of the top-risk zones, showing total risk magnitude and the composition of its key drivers.")
+        
+        try:
+            required_cols = ['Zone', 'Integrated_Risk_Score', 'Violence Clustering Score', 'Medical Surge Score', 'Spatial Spillover Risk']
+            if not all(col in kpi_df.columns for col in required_cols):
+                st.error("Data missing for Key Risk Indicator Profiles.")
+                logger.warning(f"KRI plot missing columns: {set(required_cols) - set(kpi_df.columns)}")
+                return
 
+            df_top = kpi_df.nlargest(5, 'Integrated_Risk_Score').copy()
+
+            if df_top.empty:
+                st.info("No significant risk zones to display profiles for.")
+                return
+
+            # Define colors for each risk type
+            colors = {
+                "Violence": "#D32F2F",
+                "Medical": "#1E90FF",
+                "Spillover": "#FF9800" # Orange for spatial/proximity risk
+            }
+
+            # --- Iterate through zones and create a rich visual layout for each ---
+            for i, row in df_top.iterrows():
+                zone = row['Zone']
+                total_risk = row['Integrated_Risk_Score']
+                
+                # --- Main Container for the Zone ---
+                st.markdown("---")
+                col1, col2 = st.columns([1, 2])
+
+                # --- Column 1: Zone Name and Total Risk Score ---
+                with col1:
+                    st.markdown(f"##### {zone}")
+                    # Visual Data Bar for Total Risk
+                    st.progress(total_risk, text=f"Integrated Risk: {total_risk:.3f}")
+
+                # --- Column 2: Breakdown of Key Risk Drivers using Bullet-like charts ---
+                with col2:
+                    sub_cols = st.columns(3)
+                    
+                    # Violence Score
+                    with sub_cols[0]:
+                        violence_score = row['Violence Clustering Score']
+                        st.markdown(f"<p style='color: {colors['Violence']}; font-size: 13px; margin-bottom: -10px;'><b>Violence</b></p>", unsafe_allow_html=True)
+                        fig_v = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = violence_score * 100,
+                            number = {'font': {'size': 24, 'color': colors['Violence']}},
+                            gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': colors['Violence'], 'thickness': 0.8}}))
+                        fig_v.update_layout(height=80, margin=dict(l=0,r=0,t=20,b=0), paper_bgcolor='rgba(0,0,0,0)')
+                        st.plotly_chart(fig_v, use_container_width=True)
+
+                    # Medical Score
+                    with sub_cols[1]:
+                        medical_score = row['Medical Surge Score']
+                        st.markdown(f"<p style='color: {colors['Medical']}; font-size: 13px; margin-bottom: -10px;'><b>Medical</b></p>", unsafe_allow_html=True)
+                        fig_m = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = medical_score * 100,
+                            number = {'font': {'size': 24, 'color': colors['Medical']}},
+                            gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': colors['Medical'], 'thickness': 0.8}}))
+                        fig_m.update_layout(height=80, margin=dict(l=0,r=0,t=20,b=0), paper_bgcolor='rgba(0,0,0,0)')
+                        st.plotly_chart(fig_m, use_container_width=True)
+
+                    # Spillover Score
+                    with sub_cols[2]:
+                        spillover_score = row['Spatial Spillover Risk']
+                        st.markdown(f"<p style='color: {colors['Spillover']}; font-size: 13px; margin-bottom: -10px;'><b>Spillover</b></p>", unsafe_allow_html=True)
+                        fig_s = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = spillover_score * 100,
+                            number = {'font': {'size': 24, 'color': colors['Spillover']}},
+                            gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': colors['Spillover'], 'thickness': 0.8}}))
+                        fig_s.update_layout(height=80, margin=dict(l=0,r=0,t=20,b=0), paper_bgcolor='rgba(0,0,0,0)')
+                        st.plotly_chart(fig_s, use_container_width=True)
+
+        except Exception as e:
+            logger.error(f"Error rendering Key Risk Indicators: {e}", exc_info=True)
+            st.warning("Could not display Key Risk Indicator Profiles.")
     # --- TAB 2: KPI DEEP DIVE ---
     def _render_kpi_deep_dive_tab(self):
         st.subheader("Comprehensive Risk Indicator Matrix")
