@@ -436,53 +436,70 @@ class Dashboard:
             df['risk_covered'] = df['allocated_units'] * risk_cov
             df['resource_deficit'] = df['Integrated_Risk_Score'] - df['risk_covered']
 
+            # Define a dynamic reference for bubble sizing to prevent errors
+            max_incidents = max(df['Expected Incident Volume'].max(), 1)
+            sizeref = 2. * max_incidents / (40.**2)
+
             mean_risk = df['Integrated_Risk_Score'].mean()
             
             fig = go.Figure()
 
             # Background Quadrant Colors for intuitive interpretation
-            fig.add_shape(type="rect", xref="x", yref="y", x0=mean_risk, y0=0, x1=df['Integrated_Risk_Score'].max()*1.1, y1=df['resource_deficit'].max()*1.1, line=dict(width=0), fillcolor="rgba(211, 47, 47, 0.1)", layer="below")
-            fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=0, x1=mean_risk, y1=df['resource_deficit'].max()*1.1, line=dict(width=0), fillcolor="rgba(30, 136, 229, 0.1)", layer="below")
+            fig.add_shape(type="rect", xref="paper", yref="paper", x0=0.5, y0=0.5, x1=1, y1=1, line=dict(width=0), fillcolor="rgba(211, 47, 47, 0.1)", layer="below")
+            fig.add_shape(type="rect", xref="paper", yref="paper", x0=0, y0=0.5, x1=0.5, y1=1, line=dict(width=0), fillcolor="rgba(30, 136, 229, 0.1)", layer="below")
             
             # Scatter Plot
             fig.add_trace(go.Scatter(
                 x=df['Integrated_Risk_Score'], y=df['resource_deficit'],
-                mode='markers+text',
+                mode='markers', # Text will be added as a separate trace for better control
                 marker=dict(
                     size=df['Expected Incident Volume'],
                     sizemode='area',
-                    sizeref=2.*max(df['Expected Incident Volume'])/(40.**2),
+                    sizeref=sizeref,
                     sizemin=4,
                     color=df['resource_deficit'],
                     colorscale="OrRd",
                     showscale=True,
-                    colorbar=dict(title="Resource Deficit")
+                    colorbar=dict(title="Resource Deficit", x=1.15)
                 ),
-                text=df['Zone'],
+                customdata=df[['Zone', 'allocated_units']],
+                hovertemplate="<b>Zone: %{customdata[0]}</b><br>Total Risk: %{x:.3f}<br>Resource Deficit: %{y:.3f}<br>Units Allocated: %{customdata[1]}<extra></extra>"
+            ))
+            
+            # Add text labels selectively to avoid clutter
+            df_high_priority = df[df['resource_deficit'] > 0.1]
+            fig.add_trace(go.Scatter(
+                x=df_high_priority['Integrated_Risk_Score'], y=df_high_priority['resource_deficit'],
+                mode='text',
+                text=df_high_priority['Zone'],
                 textposition="top center",
-                textfont=dict(size=9, color='#555'),
-                customdata=df[['allocated_units']],
-                hovertemplate="<b>%{text}</b><br>Total Risk: %{x:.3f}<br>Resource Deficit: %{y:.3f}<br>Units Allocated: %{customdata[0]}<extra></extra>"
+                textfont=dict(size=10, color='#444'),
+                showlegend=False,
+                hoverinfo='none'
             ))
 
             # Quadrant Lines and Annotations
-            fig.add_vline(x=mean_risk, line_width=1, line_dash="dash", line_color="grey")
+            fig.add_vline(x=mean_risk, line_width=1, line_dash="dash", line_color="darkgrey")
             fig.add_hline(y=0, line_width=2, line_color="black")
             
-            anno_font = dict(family="sans-serif", size=12, color="white")
-            fig.add_annotation(x=df['Integrated_Risk_Score'].max(), y=df['resource_deficit'].max(), text="<b>URGENT DEFICIT</b><br>(High Risk, High Need)", showarrow=False, font=anno_font, bgcolor="rgba(211, 47, 47, 0.7)", xanchor='right', yanchor='top', pad=4)
-            fig.add_annotation(x=0, y=df['resource_deficit'].max(), text="<b>POTENTIAL SURPLUS</b><br>(Low Risk, High Need)", showarrow=False, font=anno_font, bgcolor="rgba(30, 136, 229, 0.7)", xanchor='left', yanchor='top', pad=4)
-            fig.add_annotation(x=df['Integrated_Risk_Score'].max(), y=0, text="<b>STABLE</b> (High Risk, Covered)", showarrow=False, font=dict(family="sans-serif", size=12, color="#555"), xanchor='right', yanchor='bottom', pad=4)
+            # CORRECTED and IMPROVED Annotations
+            anno_font = dict(family="Arial, sans-serif", size=12, color="white")
+            fig.add_annotation(xref="paper", yref="paper", x=0.98, y=0.98, text="<b>URGENT DEFICIT</b><br>(High Risk, High Need)", showarrow=False, font=anno_font, bgcolor="#D32F2F", xanchor='right', yanchor='top', borderpad=4, bordercolor="#D32F2F")
+            fig.add_annotation(xref="paper", yref="paper", x=0.02, y=0.98, text="<b>POTENTIAL SURPLUS</b><br>(Low Risk, High Need)", showarrow=False, font=anno_font, bgcolor="#1E90FF", xanchor='left', yanchor='top', borderpad=4, bordercolor="#1E90FF")
+            fig.add_annotation(xref="paper", yref="paper", x=0.98, y=0.02, text="<b>STABLE</b> (High Risk, Covered)", showarrow=False, font=dict(family="Arial, sans-serif", size=12, color="#333"), xanchor='right', yanchor='bottom', borderpad=4)
+            fig.add_annotation(xref="paper", yref="paper", x=0.02, y=0.02, text="<b>ADEQUATE</b> (Low Risk, Covered)", showarrow=False, font=dict(family="Arial, sans-serif", size=12, color="#333"), xanchor='left', yanchor='bottom', borderpad=4)
+
 
             fig.update_layout(
                 title_text="Strategic Deployment Matrix",
                 xaxis_title="Zone Risk Profile →",
-                yaxis_title="← Resource Need →",
+                yaxis_title="← Uncovered Risk (Deficit) →",
                 height=550,
                 plot_bgcolor='white',
                 showlegend=False,
-                xaxis=dict(gridcolor='#e5e5e5'),
-                yaxis=dict(gridcolor='#e5e5e5', zerolinecolor='black', zerolinewidth=2)
+                xaxis=dict(gridcolor='#e5e5e5', zeroline=False),
+                yaxis=dict(gridcolor='#e5e5e5', zeroline=True, zerolinewidth=2, zerolinecolor='black'),
+                margin=dict(l=60, r=40, t=60, b=60)
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
