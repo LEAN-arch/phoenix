@@ -173,7 +173,7 @@ class Dashboard:
     ) -> go.Figure:
         """
         [SME VISUALIZATION] Creates a sophisticated and elegant sparkline plot.
-        This design is optimized for information density in a small space.
+        This design is optimized for information density in a small space and includes a contextual y-axis.
         """
         fig = go.Figure()
 
@@ -236,12 +236,20 @@ class Dashboard:
         padding = (plot_max - plot_min) * 0.15
         
         fig.update_layout(
-            yaxis=dict(range=[plot_min - padding, plot_max + padding], visible=False),
+            # --- Y-AXIS IS NOW VISIBLE ---
+            yaxis=dict(
+                range=[plot_min - padding, plot_max + padding],
+                showticklabels=True,  # This makes the axis labels visible
+                tickfont=dict(size=10, color="#999"),
+                side='right',
+                nticks=4, # Limit the number of ticks to avoid clutter
+                showgrid=False # Keep the plot area clean
+            ),
             xaxis=dict(visible=False),
             showlegend=False,
             plot_bgcolor='rgba(240, 240, 240, 0.95)',
             paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=5, r=5, t=5, b=5),
+            margin=dict(l=5, r=40, t=5, b=5), # Increased right margin for axis labels
             height=120
         )
         return fig
