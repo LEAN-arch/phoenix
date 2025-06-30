@@ -173,7 +173,6 @@ class Dashboard:
             map_object = self._render_dynamic_map(
                 kpi_df=st.session_state.kpi_df,
                 incidents=st.session_state.current_incidents,
-                # Pass unhashable objects with a leading underscore
                 _zones_gdf=self.dm.zones_gdf,
                 _ambulances=self.dm.ambulances,
             )
@@ -186,21 +185,13 @@ class Dashboard:
 
     @staticmethod
     def _create_status_metric(label: str, value: str, trend: str, color: str) -> str:
-        """Helper to generate HTML for a single metric in the status bar."""
-        return f"""
-        <div style="flex: 1; background-color: {color}; padding: 10px; text-align: center; color: white; border-right: 1px solid #fff4;">
-            <div style="font-size: 1.5rem; font-weight: bold;">{value} {trend}</div>
-            <div style="font-size: 0.8rem;">{label}</div>
-        </div>
-        """
+        return f"""<div style="flex:1;background-color:{color};padding:10px;text-align:center;color:white;border-right:1px solid #fff4;"><div style="font-size:1.5rem;font-weight:bold;">{value} {trend}</div><div style="font-size:0.8rem;">{label}</div></div>"""
 
     def _render_system_status_bar(self):
-        """Renders the top-level system health status bar."""
         st.subheader("System Health Status")
         kpi_df, spark_data = st.session_state.kpi_df, st.session_state.sparkline_data
         if kpi_df.empty or not spark_data:
-            st.info("System status unavailable: Waiting for data...")
-            return
+            st.info("System status unavailable: Waiting for data..."); return
         try:
             inc_val, amb_val = len(st.session_state.current_incidents), sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
             risk_val, adeq_val = kpi_df['Integrated_Risk_Score'].max(), kpi_df['Resource Adequacy Index'].mean()
@@ -209,52 +200,43 @@ class Dashboard:
                 spark_data.get('available_ambulances', {'values': [amb_val], 'range': [amb_val-1, amb_val+1]}),
                 spark_data.get('max_risk', {'values': [risk_val], 'range': [0, 1]}),
                 spark_data.get('adequacy', {'values': [adeq_val], 'range': [0, 1]}))
-
             def get_color(v, r, high_is_bad=True): return "#D32F2F" if (high_is_bad and v > r[1]) or (not high_is_bad and v < r[0]) else "#FBC02D" if (high_is_bad and v > r[0]) or (not high_is_bad and v < r[1]) else "#388E3C"
-            def get_trend(d): return "▲" if len(d) > 1 and d[-1] > d[-2] else "▼" if len(d) > 1 and d[-1] < d[-2] else "▬"
-
-            metrics = [
-                self._create_status_metric("Active Incidents", f"{inc_val}", get_trend(inc_data['values']), get_color(inc_val, inc_data['range'])),
-                self._create_status_metric("Available Units", f"{amb_val}", get_trend(amb_data['values']), get_color(amb_val, amb_data['range'], False)),
-                self._create_status_metric("Max Zone Risk", f"{risk_val:.3f}", get_trend(risk_data['values']), get_color(risk_val, risk_data['range'])),
-                self._create_status_metric("System Adequacy", f"{adeq_val:.1%}", get_trend(adeq_data['values']), get_color(adeq_val, adeq_data['range'], False))]
+            def get_trend(d): return "▲" if len(d)>1 and d[-1]>d[-2] else "▼" if len(d)>1 and d[-1]<d[-2] else "▬"
+            metrics = [self._create_status_metric("Active Incidents",f"{inc_val}",get_trend(inc_data['values']),get_color(inc_val,inc_data['range'])), self._create_status_metric("Available Units",f"{amb_val}",get_trend(amb_data['values']),get_color(amb_val,amb_data['range'],False)), self._create_status_metric("Max Zone Risk",f"{risk_val:.3f}",get_trend(risk_data['values']),get_color(risk_val,risk_data['range'])), self._create_status_metric("System Adequacy",f"{adeq_val:.1%}",get_trend(adeq_data['values']),get_color(adeq_val,adeq_data['range'],False))]
             metrics[-1] = metrics[-1].replace('border-right: 1px solid #fff4;', '')
-            st.markdown(f'<div style="display:flex; border:1px solid #444; border-radius:5px; overflow:hidden;">{"".join(metrics)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex;border:1px solid #444;border-radius:5px;overflow:hidden;font-family:sans-serif;">{"".join(metrics)}</div>', unsafe_allow_html=True)
         except Exception as e:
             logger.error(f"Error rendering status bar: {e}", exc_info=True)
             st.warning(f"Could not render system status bar: {e}")
 
-    # CORRECTED: Added leading underscores to unhashable arguments
     @st.cache_data(show_spinner="Rendering Operations Map...")
     def _render_dynamic_map(_self, kpi_df: pd.DataFrame, incidents: List[Dict], _zones_gdf: gpd.GeoDataFrame, _ambulances: Dict) -> Optional[folium.Map]:
-        """Renders the Folium map. Cached for performance."""
         if _zones_gdf.empty or kpi_df.empty or 'Zone' not in kpi_df.columns:
-            st.warning("Map data not yet available.")
-            return None
+            st.warning("Map data not yet available."); return None
         try:
             map_gdf = _zones_gdf.join(kpi_df.set_index('Zone'), on='name')
+            # --- CORRECTED: Reset the index so 'name' becomes a column for Folium ---
+            map_gdf.reset_index(inplace=True)
+            
             center = _zones_gdf.union_all().centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=11, tiles="cartodbpositron", prefer_canvas=True)
             folium.Choropleth(
-                geo_data=map_gdf.to_json(), data=map_gdf, columns=['name', 'Integrated_Risk_Score'],
+                geo_data=map_gdf, data=map_gdf, columns=['name', 'Integrated_Risk_Score'],
                 key_on='feature.properties.name', fill_color='YlOrRd', fill_opacity=0.7, line_opacity=0.2,
                 legend_name='Integrated Risk Score', name="Risk Heatmap"
             ).add_to(m)
-
             incidents_fg = MarkerCluster(name='Live Incidents', show=True).add_to(m)
             for inc in incidents:
                 if (loc := inc.get('location')) and 'lat' in loc and 'lon' in loc:
                     icon = "car-crash" if "Accident" in inc.get('type', '') else "first-aid"
                     folium.Marker([loc['lat'], loc['lon']], tooltip=f"Type: {inc.get('type','N/A')}<br>Triage: {inc.get('triage','N/A')}",
                                   icon=folium.Icon(color='red', icon=icon, prefix='fa')).add_to(incidents_fg)
-
             ambulance_fg = folium.FeatureGroup(name='Available Unit Reach (5-min)', show=False).add_to(m)
             for amb_id, amb_data in _ambulances.items():
                 if amb_data.get('status') == 'Disponible':
                     loc = amb_data.get('location')
                     folium.Circle([loc.y, loc.x], radius=2400, color='#1E90FF', fill=True, fill_opacity=0.1, tooltip=f"Unit {amb_id} Reach").add_to(ambulance_fg)
                     folium.Marker([loc.y, loc.x], icon=folium.Icon(color='blue', icon='ambulance', prefix='fa'), tooltip=f"Unit {amb_id} (Available)").add_to(ambulance_fg)
-            
             folium.LayerControl().add_to(m)
             return m
         except Exception as e:
@@ -263,44 +245,37 @@ class Dashboard:
             return None
 
     def _plot_system_pressure_gauge(self):
-        """Displays a gauge for overall system pressure."""
         try:
             kpi_df, env = st.session_state.kpi_df, st.session_state.env_factors
             if kpi_df.empty: return
-            t_norm = np.clip((env.traffic_level - CONSTANTS['TRAFFIC_MIN']) / (CONSTANTS['TRAFFIC_MAX'] - CONSTANTS['TRAFFIC_MIN']), 0, 1)
+            t_norm = np.clip((env.traffic_level-CONSTANTS['TRAFFIC_MIN'])/(CONSTANTS['TRAFFIC_MAX']-CONSTANTS['TRAFFIC_MIN']), 0, 1)
             h_norm, a_norm = env.hospital_divert_status, 1 - kpi_df['Resource Adequacy Index'].mean()
             score = (t_norm*CONSTANTS['PRESSURE_WEIGHTS']['traffic'] + h_norm*CONSTANTS['PRESSURE_WEIGHTS']['hospital'] + a_norm*CONSTANTS['PRESSURE_WEIGHTS']['adequacy']) * 125
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number", value=min(score, 100), title={'text': "System Pressure"},
-                gauge={'axis': {'range': [0, 100]}, 'bar': {'color': "#222"},
-                       'steps': [{'range': [0, 40], 'color': '#388E3C'}, {'range': [40, 75], 'color': '#FBC02D'}, {'range': [75, 100], 'color': '#D32F2F'}]}))
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=min(score, 100), title={'text':"System Pressure"},
+                gauge={'axis':{'range':[0,100]}, 'bar':{'color':"#222"}, 'steps':[{'range':[0,40],'color':'#388E3C'},{'range':[40,75],'color':'#FBC02D'},{'range':[75,100],'color':'#D32F2F'}]}))
             fig.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            logger.error(f"Error in pressure gauge: {e}", exc_info=True)
-            st.warning("Could not display System Pressure gauge.")
+            logger.error(f"Error in pressure gauge: {e}", exc_info=True); st.warning("Could not display System Pressure gauge.")
 
     def _plot_resource_to_risk_adequacy(self):
-        """Plots a bar chart comparing risk demand to resource supply."""
         try:
             kpi_df, allocations = st.session_state.kpi_df, st.session_state.allocations
-            if kpi_df.empty or 'Integrated_Risk_Score' not in kpi_df.columns:
-                st.info("No data for risk adequacy plot."); return
+            if kpi_df.empty or 'Integrated_Risk_Score' not in kpi_df.columns: st.info("No data for risk adequacy plot."); return
             df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
             df['allocated'] = df['Zone'].map(allocations).fillna(0)
             risk_cov = self.config.get('model_params',{}).get('risk_coverage_per_unit', CONSTANTS['RISK_COVERAGE_PER_UNIT'])
             df['risk_covered'] = df['allocated'] * risk_cov
-            df['ratio'] = np.clip((df['risk_covered'] + 1e-9) / (df['Integrated_Risk_Score'] + 1e-9), 0, 1.5)
+            df['ratio'] = np.clip((df['risk_covered']+1e-9) / (df['Integrated_Risk_Score']+1e-9), 0, 1.5)
             df['color'] = df['ratio'].apply(lambda r: '#D32F2F' if r < 0.7 else '#FBC02D' if r < 1.0 else '#388E3C')
             fig = go.Figure()
             fig.add_trace(go.Bar(y=df['Zone'], x=df['Integrated_Risk_Score'], orientation='h', name='Total Risk', marker_color='#e0e0e0', hovertemplate="<b>Zone:</b> %{y}<br><b>Total Risk:</b> %{x:.3f}<extra></extra>"))
-            fig.add_trace(go.Bar(y=df['Zone'], x=df['risk_covered'], orientation='h', name='Covered Risk', marker_color=df['color'], text=df['allocated'].astype(int).astype(str)+" Unit(s)", textposition='inside', textfont=dict(color='white', size=12), hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Covered:</b> %{x:.3f}<br><b>Allocated:</b> %{text}<extra></extra>"))
-            fig.update_layout(title='Resource vs. Demand for High-Risk Zones', xaxis_title='Integrated Risk Score', yaxis_title=None, height=350, yaxis={'categoryorder':'total ascending'}, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), barmode='overlay', plot_bgcolor='white', margin=dict(l=10, r=10, t=70, b=10))
+            fig.add_trace(go.Bar(y=df['Zone'], x=df['risk_covered'], orientation='h', name='Covered Risk', marker_color=df['color'], text=df['allocated'].astype(int).astype(str)+" Unit(s)", textposition='inside', textfont=dict(color='white',size=12), hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Covered:</b> %{x:.3f}<br><b>Allocated:</b> %{text}<extra></extra>"))
+            fig.update_layout(title='Resource vs. Demand for High-Risk Zones', xaxis_title='Integrated Risk Score', yaxis_title=None, height=350, yaxis={'categoryorder':'total ascending'}, legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1), barmode='overlay', plot_bgcolor='white', margin=dict(l=10,r=10,t=70,b=10))
             st.plotly_chart(fig, use_container_width=True)
-            st.markdown("**How to Read:** The grey bar is the risk (demand). The colored bar is the coverage from allocated units (supply).")
+            st.markdown("**How to Read:** Grey bar is risk (demand). Colored bar is coverage (supply).")
         except Exception as e:
-            logger.error(f"Error in adequacy plot: {e}", exc_info=True)
-            st.warning("Could not display Resource Adequacy plot.")
+            logger.error(f"Error in adequacy plot: {e}", exc_info=True); st.warning("Could not display Resource Adequacy plot.")
 
     # --- TAB 2: KPI DEEP DIVE ---
     def _render_kpi_deep_dive_tab(self):
@@ -326,8 +301,13 @@ class Dashboard:
             fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score", size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18, hover_data={'Zone':False, 'Ensemble Risk Score':':.3f', 'GNN_Structural_Risk':':.3f'})
             fig.update_traces(hovertemplate="<b>Zone: %{hovertext}</b><br><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>")
             fig.add_vline(x=x_m, line_width=1, line_dash="dash", line_color="grey"); fig.add_hline(y=y_m, line_width=1, line_dash="dash", line_color="grey")
-            anno = {'showarrow':False, 'font':{'size':12}}; fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red"}, **anno)
-            fig.add_annotation(x=x_m/2, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy"}, **anno); fig.add_annotation(x=x_m*1.5, y=y_m/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange"}, **anno)
+            
+            # --- CORRECTED: Combined font arguments into a single dictionary per call ---
+            base_anno = {'showarrow': False}
+            fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red", 'size':12}, **base_anno)
+            fig.add_annotation(x=x_m/2, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy", 'size':12}, **base_anno)
+            fig.add_annotation(x=x_m*1.5, y=y_m/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange", 'size':12}, **base_anno)
+            
             fig.update_layout(xaxis_title="Dynamic Risk", yaxis_title="Structural Vulnerability", coloraxis_colorbar_title_text='Integrated<br>Risk')
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
@@ -360,7 +340,6 @@ class Dashboard:
             defaults = kpi_df.nlargest(3, 'Integrated_Risk_Score')['Zone'].tolist()
             selected = st.multiselect("Select zones for forecast:", options=zones, default=defaults)
             if not selected: st.info("Please select at least one zone."); return
-
             fig = go.Figure()
             colors = px.colors.qualitative.Plotly
             for i, zone in enumerate(selected):
