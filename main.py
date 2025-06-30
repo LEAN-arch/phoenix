@@ -15,11 +15,29 @@ The application is structured into three main tabs:
 import logging
 import warnings
 import json
+from datetime import datetime# main.py
+"""
+RedShield AI: Phoenix v4.0 - Proactive Emergency Response Platform
+
+This is the main entry point for the Streamlit application. It orchestrates the
+user interface, data management, and predictive analytics engine to deliver
+a real-time, interactive dashboard for emergency response command staff.
+
+The application is structured into three main tabs:
+1. Operational Command: A live map and decision support gauges for immediate action.
+2. KPI Deep Dive: Advanced analytics and visualizations for deeper insights.
+3. Methodology & Insights: A detailed explanation of the underlying models.
+"""
+
+import logging
+import warnings
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import folium
+import geopandas as gpd  # <--- CORRECTED: Added missing import
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -198,14 +216,14 @@ class Dashboard:
         with col1:
             st.subheader("Live Operations Map")
             # Optimized: Pass data from session state to a cached rendering function
-            map_html = self._render_dynamic_map(
+            map_object = self._render_dynamic_map(
                 kpi_df=st.session_state.kpi_df,
                 incidents=st.session_state.current_incidents,
                 zones_gdf=self.dm.zones_gdf,
                 ambulances=self.dm.ambulances,
             )
-            if map_html:
-                st_folium(map_html, use_container_width=True, height=600)
+            if map_object:
+                st_folium(map_object, use_container_width=True, height=600)
 
         with col2:
             st.subheader("Decision Support")
@@ -958,9 +976,6 @@ def main():
         logger.critical(f"A fatal error occurred during application startup: {e}", exc_info=True)
         st.error(f"A fatal application error occurred: {e}. Please check logs and configuration file.")
 
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
