@@ -1193,69 +1193,83 @@ class Dashboard:
 
     # --- SIDEBAR AND ACTIONS ---
 # In main.py, inside the Dashboard class:
-
     def _render_sidebar(self):
         """Renders the sidebar for user controls and actions."""
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
         
-        # This calls a separate method to build the EnvFactors object
         new_env = self._build_env_factors_from_sidebar()
         
-        # This part remains unchanged
         if new_env != st.session_state.env_factors:
             logger.info("EnvFactors updated, triggering rerun.")
             st.session_state.env_factors = new_env
+            # If in simulation mode, we need to regenerate synthetic incidents with new factors
+            if st.session_state.get('simulation_mode', False):
+                st.session_state.current_incidents = self.dm._generate_synthetic_incidents(
+                    st.session_state.env_factors, 
+                    override_count=len(st.session_state.current_incidents)
+                )
             st.rerun()
 
-        # --- Scenario Simulation Controls ---
-        with st.sidebar.expander("Scenario Simulation", expanded=True):
-            st.markdown("Manually adjust system load and resource levels to test 'what-if' scenarios.")
-            
+        # --- SME Fix: Introduce an explicit Simulation Mode ---
+        st.sidebar.divider()
+        st.sidebar.header("Scenario Simulation")
+        
+        # Initialize simulation_mode if it doesn't exist
+        if 'simulation_mode' not in st.session_state:
+            st.session_state.simulation_mode = False
+
+        # The master toggle for simulation mode
+        st.session_state.simulation_mode = st.sidebar.toggle(
+            "Activate Simulation Mode", 
+            value=st.session_state.simulation_mode,
+            help="Turn this on to manually override live data with your own scenarios."
+        )
+
+        with st.sidebar.expander("Simulation Controls", expanded=st.session_state.simulation_mode):
+            # The controls are disabled if simulation mode is off
+            is_disabled = not st.session_state.simulation_mode
+
             # Control for Number of Incidents
             current_incident_count = len(st.session_state.get('current_incidents', []))
             new_incident_count = st.number_input(
                 "Set Number of Active Incidents",
-                min_value=0,
-                value=current_incident_count,
-                step=1,
-                key="incident_simulator", # Added key for robustness
-                help="Override the live data feed to simulate a different number of active incidents across the city."
+                min_value=0, value=current_incident_count, step=1,
+                key="incident_simulator", disabled=is_disabled,
+                help="Override the live data feed to simulate a different number of active incidents."
             )
-
-            if new_incident_count != current_incident_count:
-                st.session_state.current_incidents = self.dm._generate_synthetic_incidents(
-                    st.session_state.env_factors, override_count=new_incident_count
-                )
-                logger.info(f"User simulated new scenario with {new_incident_count} incidents.")
-                st.rerun()
-
+            
             # Control for Number of Ambulances
             total_ambulances = len(self.dm.ambulances)
             current_available_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
             new_ambulance_count = st.number_input(
                 "Set Number of Available Ambulances",
-                min_value=0,
-                max_value=total_ambulances,
-                value=current_available_ambulances,
-                step=1,
-                key="ambulance_simulator", # Added key for robustness
+                min_value=0, max_value=total_ambulances,
+                value=current_available_ambulances, step=1,
+                key="ambulance_simulator", disabled=is_disabled,
                 help=f"Adjust the number of available units from the total fleet of {total_ambulances}."
             )
 
-            if new_ambulance_count != current_available_ambulances:
-                for i, amb_id in enumerate(self.dm.ambulances.keys()):
-                    self.dm.ambulances[amb_id]['status'] = 'Disponible' if i < new_ambulance_count else 'En Misión'
-                logger.info(f"User simulated new scenario with {new_ambulance_count} available ambulances.")
-                st.rerun()
+            # --- Logic to apply changes ONLY if simulation mode is ON and values have changed ---
+            if st.session_state.simulation_mode:
+                if new_incident_count != current_incident_count:
+                    st.session_state.current_incidents = self.dm._generate_synthetic_incidents(
+                        st.session_state.env_factors, override_count=new_incident_count
+                    )
+                    logger.info(f"User simulated new scenario with {new_incident_count} incidents.")
+                    st.rerun()
 
-        # --- Data & Reporting Section ---
+                if new_ambulance_count != current_available_ambulances:
+                    for i, amb_id in enumerate(self.dm.ambulances.keys()):
+                        self.dm.ambulances[amb_id]['status'] = 'Disponible' if i < new_ambulance_count else 'En Misión'
+                    logger.info(f"User simulated new scenario with {new_ambulance_count} available ambulances.")
+                    st.rerun()
+        
         st.sidebar.divider()
         st.sidebar.header("Data & Reporting")
-        self._sidebar_file_uploader() # Call the single method
+        self._sidebar_file_uploader()
         if st.sidebar.button("Generate & Download PDF Report", use_container_width=True):
             self._generate_report()
-
     def _build_env_factors_from_sidebar(self) -> EnvFactorsWithTolerance:
         """Builds an EnvFactors object from the current state of sidebar widgets."""
         env = st.session_state.env_factors
