@@ -170,7 +170,6 @@ class Dashboard:
         col1, col2 = st.columns([3, 2])
         with col1:
             st.subheader("Live Operations Map")
-            # --- CORRECTED: Caching logic moved to a dedicated data prep function ---
             map_data = self._prepare_map_data(
                 kpi_df=st.session_state.kpi_df,
                 _zones_gdf=self.dm.zones_gdf
@@ -214,7 +213,6 @@ class Dashboard:
             logger.error(f"Error rendering status bar: {e}", exc_info=True)
             st.warning(f"Could not render system status bar: {e}")
 
-    # --- CORRECTED CACHING STRATEGY ---
     @st.cache_data
     def _prepare_map_data(_self, kpi_df: pd.DataFrame, _zones_gdf: gpd.GeoDataFrame) -> Optional[gpd.GeoDataFrame]:
         """Prepares and caches the GeoDataFrame needed for map rendering."""
@@ -225,7 +223,7 @@ class Dashboard:
         return map_gdf
 
     def _render_dynamic_map(self, map_gdf: gpd.GeoDataFrame, incidents: List[Dict], _ambulances: Dict) -> Optional[folium.Map]:
-        """Renders the Folium map using pre-prepared, cached data. This function itself is NOT cached."""
+        """Renders the Folium map using pre-prepared, cached data. This function is NOT cached."""
         try:
             center = map_gdf.unary_union.centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=11, tiles="cartodbpositron", prefer_canvas=True)
@@ -289,20 +287,33 @@ class Dashboard:
     # --- TAB 2: KPI DEEP DIVE ---
     def _render_kpi_deep_dive_tab(self):
         st.subheader("Comprehensive Risk Indicator Matrix")
-        if not (kpi_df := st.session_state.kpi_df).empty:
+        kpi_df = st.session_state.kpi_df
+        if not kpi_df.empty:
             st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis'), use_container_width=True)
-        else: st.info("KPI data not yet available.")
+        else:
+            st.info("KPI data not yet available.")
         st.divider()
         st.subheader("Advanced Analytical Visualizations")
         if not kpi_df.empty:
-            tab1, tab2, tab3 = st.tabs(["📍 Zone Vulnerability", "📊 Risk Drill-Down", "📈 Risk Forecast"])
+            # --- SME Addition: Expanded tabs for new visualizations ---
+            tab_titles = [
+                "📍 Zone Vulnerability", 
+                "🧬 Comparative Risk Fingerprints", # New
+                "🧱 Systemic Risk Composition",   # New
+                "📊 Risk Drill-Down", 
+                "📈 Risk Forecast"
+            ]
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_titles)
             with tab1: self._plot_vulnerability_quadrant(kpi_df)
-            with tab2: self._plot_risk_contribution_sunburst(kpi_df)
-            with tab3: self._plot_forecast_with_uncertainty()
-        else: st.info("Advanced visualizations unavailable: Waiting for data...")
+            with tab2: self._plot_risk_fingerprints(kpi_df) # New
+            with tab3: self._plot_systemic_risk_composition(kpi_df) # New
+            with tab4: self._plot_risk_contribution_sunburst(kpi_df)
+            with tab5: self._plot_forecast_with_uncertainty()
+        else:
+            st.info("Advanced visualizations unavailable: Waiting for data...")
 
     def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
-        st.markdown("**Analysis:** Segments zones by long-term structural vulnerability vs. immediate dynamic risk.")
+        st.markdown("**Analysis:** Segments zones by long-term **structural vulnerability** (e.g., road network centrality) vs. immediate **dynamic risk** (e.g., recent incidents, events).")
         try:
             req = ['Ensemble Risk Score', 'GNN_Structural_Risk', 'Integrated_Risk_Score', 'Expected Incident Volume']
             if not all(c in kpi_df.columns for c in req): st.error("Data missing for Vulnerability plot."); return
@@ -312,13 +323,91 @@ class Dashboard:
             fig.add_vline(x=x_m, line_width=1, line_dash="dash", line_color="grey"); fig.add_hline(y=y_m, line_width=1, line_dash="dash", line_color="grey")
             base_anno = {'showarrow': False}
             fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red", 'size':12}, **base_anno)
-            fig.add_annotation(x=x_m/2, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy", 'size':12}, **base_anno)
-            fig.add_annotation(x=x_m*1.5, y=y_m/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange", 'size':12}, **base_anno)
-            fig.update_layout(xaxis_title="Dynamic Risk", yaxis_title="Structural Vulnerability", coloraxis_colorbar_title_text='Integrated<br>Risk')
+            fig.add_annotation(x=x_m*2, y=y_m*0.5, text="<b>Acute Hotspots</b>", font={'color':"darkorange", 'size':12}, **base_anno) # Adjusted position
+            fig.add_annotation(x=x_m*0.5, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy", 'size':12}, **base_anno)
+            fig.update_layout(xaxis_title="Dynamic Risk (Real-time Threat)", yaxis_title="Structural Vulnerability (Intrinsic Threat)", coloraxis_colorbar_title_text='Integrated<br>Risk')
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             logger.error(f"Error in vulnerability quadrant: {e}", exc_info=True)
             st.warning("Could not display Vulnerability Quadrant plot.")
+
+    # --- SME Addition: New High-Value Plot 1 ---
+    def _plot_risk_fingerprints(self, kpi_df: pd.DataFrame):
+        """
+        [SME VISUALIZATION] Plots a radar chart comparing the risk 'fingerprints' of the top 5 zones.
+        This provides a sophisticated, at-a-glance view of *why* different zones are risky.
+        """
+        st.markdown("**Analysis:** This radar chart visualizes the unique risk 'fingerprint' for the top 5 highest-risk zones. It helps answer: *'Is this zone's risk due to its inherent structure, recent activity, or system tension?'* A large, skewed shape indicates a specialized threat, while a large, balanced shape indicates a multi-faceted crisis.")
+        try:
+            risk_components = ['Ensemble Risk Score', 'GNN_Structural_Risk', 'STGP_Risk', 'HMM_State_Risk', 'Game_Theory_Tension']
+            if not all(col in kpi_df.columns for col in risk_components):
+                st.error("Data missing for Risk Fingerprints plot."); return
+
+            df_top5 = kpi_df.nlargest(5, 'Integrated_Risk_Score')
+            
+            # Normalize each component 0-1 for fair comparison on the radar chart
+            normalized_df = df_top5[risk_components].apply(lambda x: (x - x.min()) / (x.max() - x.min() + 1e-9))
+            normalized_df['Zone'] = df_top5['Zone']
+
+            fig = go.Figure()
+            for i, row in normalized_df.iterrows():
+                fig.add_trace(go.Scatterpolar(
+                    r=row.values[:-1].tolist() + [row.values[0]],  # Close the loop
+                    theta=risk_components + [risk_components[0]],
+                    fill='toself',
+                    name=row['Zone'],
+                    hovertemplate=f"<b>Zone:</b> {row['Zone']}<br><b>Risk Type:</b> %{{theta}}<br><b>Normalized Score:</b> %{{r:.3f}}<extra></extra>"
+                ))
+            
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(visible=True, range=[0, 1])
+                ),
+                showlegend=True,
+                title="Comparative Risk Fingerprints for Top 5 Zones",
+                height=500
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            logger.error(f"Error in risk fingerprints plot: {e}", exc_info=True)
+            st.warning("Could not display Risk Fingerprints plot.")
+
+    # --- SME Addition: New High-Value Plot 2 ---
+    def _plot_systemic_risk_composition(self, kpi_df: pd.DataFrame):
+        """
+        [SME VISUALIZATION] Plots a treemap to show the composition of risk types across the entire system.
+        Size represents total risk magnitude, color represents the dominant risk type.
+        """
+        st.markdown("**Analysis:** This treemap provides a city-wide overview of risk. The **size** of each rectangle represents a zone's total `Integrated_Risk_Score`. The **color** indicates the dominant *type* of incident risk (Violence, Accident, or Medical). This allows commanders to instantly identify not just *how much* risk exists, but *what kind* of risk is driving it across the system.")
+        try:
+            risk_types = ['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score', 'Integrated_Risk_Score']
+            if not all(col in kpi_df.columns for col in risk_types):
+                st.error("Data missing for Systemic Risk Composition plot."); return
+
+            df_comp = kpi_df.copy()
+            # Identify the dominant risk driver
+            df_comp['Dominant_Risk'] = df_comp[['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score']].idxmax(axis=1).str.replace(' Score', '').str.replace(' Clustering', '')
+            
+            fig = px.treemap(
+                df_comp,
+                path=[px.Constant("All Zones"), 'Dominant_Risk', 'Zone'],
+                values='Integrated_Risk_Score',
+                color='Dominant_Risk',
+                color_discrete_map={
+                    'Violence': '#D32F2F',
+                    'Accident': '#FBC02D',
+                    'Medical Surge': '#1E90FF',
+                    '(?)': 'grey'
+                },
+                hover_data={'Integrated_Risk_Score': ':.3f'},
+                title="Systemic Risk Composition"
+            )
+            fig.update_traces(textinfo="label+percent root", hovertemplate='<b>Zone:</b> %{label}<br><b>Total Integrated Risk:</b> %{value:.3f}<br><b>Dominant Type:</b> %{color}<extra></extra>')
+            fig.update_layout(height=500, margin=dict(t=50, l=10, r=10, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            logger.error(f"Error in systemic risk composition plot: {e}", exc_info=True)
+            st.warning("Could not display Systemic Risk Composition plot.")
 
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
         st.markdown("**Analysis:** Break down a zone's `Integrated_Risk_Score` into its model components.")
@@ -544,90 +633,20 @@ class Dashboard:
     def _render_kpi_glossary(self):
         with st.expander("V. Key Performance Indicator (KPI) Glossary", expanded=False):
             kpi_defs = {
-                "Integrated Risk Score": """
-                **The final, primary risk metric** used for all decisions, blending foundational and advanced AI models.
-                - **Objective:** To create the single, unified, actionable risk score by blending the baseline with advanced AI signals.
-                - **Overall Relevance:** This is the primary output of the predictive engine and drives all downstream tasks.
-                - **Mathematical Formulation:** A weighted linear combination:
-                    $$
-                    R_{int} = \\alpha R_{ens} + \\beta R_{stgp} + \\gamma R_{gnn} + \\delta R_{tension} + ...
-                    $$
-                - **Mathematical Relevance:** A hierarchical ensemble that combines a stable base with specialized, sensitive signals for a balanced and powerful final prediction.
-                """,
-                "Ensemble Risk Score": """
-                Blended risk score from the foundational (Layer 1) models.
-                - **Objective:** To combine signals from foundational models into a stable baseline risk assessment.
-                - **Overall Relevance:** It provides a robust, interpretable "first-pass" risk score.
-                - **Mathematical Formulation:** A weighted average of normalized model outputs:
-                    $$
-                    R_{ens} = \\sum_{k=1}^{K} w_k \\cdot \\text{normalize}(M_k)
-                    $$
-                - **Mathematical Relevance:** A classic model ensembling technique to reduce variance and improve robustness.
-                """,
-                "GNN Structural Risk": """
-                A zone's intrinsic vulnerability due to its position in the road network.
-                - **Objective:** To identify long-term, endemic hotspots of violence based on their inherent network properties, independent of recent events.
-                - **Overall Relevance:** It provides a stable, foundational layer of risk, preventing the system from ignoring historically dangerous areas that are momentarily quiet.
-                - **Mathematical Formulation (PageRank):** A zone `zᵢ`'s importance is calculated iteratively based on the importance of its neighbors:
-                    $$
-                    PR(z_i) = \\frac{1-d}{N} + d \\sum_{z_j \\in N(z_i)} \\frac{PR(z_j)}{|N(z_j)|}
-                    $$
-                """,
-                "STGP Risk": """
-                Risk from proximity to recent, severe incidents (spatiotemporal correlation).
-                - **Objective:** To quantify risk from proximity to recent, severe incidents, assuming risk decays smoothly over space and time.
-                - **Overall Relevance:** It provides a more fluid, less-blocky view of risk that respects geographical closeness over arbitrary zone boundaries.
-                - **Mathematical Formulation:** The posterior mean of a Spatiotemporal Gaussian Process, `f(s,t) ~ GP(m, k)`, conditioned on recent incident locations.
-                - **Mathematical Relevance:** A non-parametric Bayesian method that provides a statistically powerful way to perform spatiotemporal interpolation.
-                """,
-                "Game Theory Tension": """
-                A measure of a zone's contribution to system-wide resource competition.
-                - **Objective:** To measure how much a single zone contributes to the overall "competition" for limited EMS resources.
-                - **Overall Relevance:** It identifies which zones are the primary drivers of system-wide strain.
-                - **Mathematical Formulation:** A heuristic capturing the interaction between risk and demand:
-                    $$
-                    T_i = R_i \\times E_i
-                    $$
-                - **Mathematical Relevance:** It acts as a proxy for a zone's "bidding power" in a conceptual resource competition, prioritizing areas where the consequences of under-resourcing are highest.
-                """,
-                "Chaos Sensitivity Score": """
-                Measures system volatility and fragility. High score = 'The system is unstable.'
-                - **Objective:** To provide an early warning of system instability.
-                - **Overall Relevance:** It's the system's "check engine light." High risk + high chaos is a volatile, unpredictable crisis in the making.
-                - **Mathematical Formulation (Heuristic):** A practical proxy for the Largest Lyapunov Exponent, calculated from the log of the mean absolute difference in the time series of incident counts: `log(mean(|count(t) - count(t-1)|))`.
-                - **Mathematical Relevance:** Applies a core concept from dynamical systems theory to provide a meta-level insight into the system's state (its rate of change and volatility).
-                """,
-                "Anomaly Score": """
-                Measures the 'strangeness' of the current incident pattern compared to history.
-                - **Objective:** To quantify how "strange" the current spatial pattern of incidents is compared to the historical norm.
-                - **Overall Relevance:** It detects novel threats or unusual shifts in behavior that would be missed by looking at volume alone.
-                - **Mathematical Formulation (KL Divergence):**
-                    $$
-                    D_{KL}(P || Q) = \\sum_{z} P(z) \\log{\\frac{P(z)}{Q(z)}}
-                    $$
-                - **Mathematical Relevance:** A fundamental metric from information theory measuring the "surprise" when moving from a prior distribution (history) to a posterior one (today).
-                """,
-                "Resource Adequacy Index": """
-                System-wide ratio of available units to expected demand, penalized by hospital strain.
-                - **Objective:** To provide a single, holistic measure of the EMS system's ability to meet the currently predicted demand.
-                - **Overall Relevance:** A top-line metric for commanders. A score of 60% indicates the system is severely overstretched.
-                - **Mathematical Formulation:** A ratio of supply to demand, penalized by system strain factors:
-                    $$
-                    RAI = \\frac{\\text{AvailableUnits}}{\\sum E_i \\times (1 + k_{hosp} \\cdot \\text{HospDivert} + k_{traf} \\cdot \\text{Traffic})}
-                    $$
-                - **Mathematical Relevance:** A practical, operational metric that directly synthesizes predictive outputs (`Σ Eᵢ`) with real-time system status variables into an actionable health score.
-                """
+                "Integrated Risk Score": """**The final, primary risk metric** used for all decisions.""",
+                "Ensemble Risk Score": """Blended risk score from foundational statistical models. Provides a stable baseline.""",
+                "GNN Structural Risk": """A zone's intrinsic vulnerability due to its position in the road and social network.""",
+                "STGP Risk": """Risk from proximity to recent, severe incidents (spatiotemporal correlation).""",
+                "Game Theory Tension": """A measure of a zone's contribution to system-wide resource competition.""",
+                "Chaos Sensitivity Score": """Measures system volatility and fragility. High score = 'The system is unstable.'""",
+                "Anomaly Score": """Measures the 'strangeness' of the current incident pattern compared to history.""",
+                "Resource Adequacy Index": """System-wide ratio of available units to expected demand, penalized by system strain."""
             }
             for kpi, definition in kpi_defs.items():
-                c1, c2 = st.columns([1, 2])
-                with c1: st.markdown(f"**{kpi}**")
-                with c2: st.markdown(definition)
-                st.markdown("---", unsafe_allow_html=True)
+                st.markdown(f"**{kpi}:** {definition}")
 
     # --- SIDEBAR AND ACTIONS ---
-
     def _render_sidebar(self):
-        """Renders the sidebar for user controls and actions."""
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
         new_env = self._build_env_factors_from_sidebar()
@@ -642,7 +661,6 @@ class Dashboard:
             self._generate_report()
 
     def _build_env_factors_from_sidebar(self) -> EnvFactorsWithTolerance:
-        """Builds an EnvFactors object from the current state of sidebar widgets."""
         env = st.session_state.env_factors
         with st.sidebar.expander("General Environmental Factors", expanded=True):
             is_holiday = st.checkbox("Is Holiday", value=env.is_holiday)
@@ -666,7 +684,6 @@ class Dashboard:
         )
 
     def _sidebar_file_uploader(self):
-        """Handles logic for the historical data file uploader."""
         up_file = st.sidebar.file_uploader("Upload Historical Incidents (JSON)", type=["json"])
         if up_file:
             try:
@@ -676,15 +693,11 @@ class Dashboard:
                 st.session_state.historical_data = data
                 st.sidebar.success(f"Loaded {len(data)} historical records.")
                 st.rerun()
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"Error loading uploaded data: {e}", exc_info=True)
-                st.sidebar.error(f"Error parsing file: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error during file upload: {e}", exc_info=True)
-                st.sidebar.error("An unexpected error occurred.")
+                logger.error(f"Error loading uploaded data: {e}", exc_info=True)
+                st.sidebar.error(f"Error loading data: {e}")
 
     def _generate_report(self):
-        """Generates and provides a download link for the PDF report."""
         with st.spinner("Generating Report..."):
             try:
                 pdf_buffer = ReportGenerator.generate_pdf_report(
