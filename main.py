@@ -15,38 +15,29 @@ The application is structured into three main tabs:
 import logging
 import warnings
 import json
-from datetime import datetime# main.py
-"""
-RedShield AI: Phoenix v4.0 - Proactive Emergency Response Platform
-
-This is the main entry point for the Streamlit application. It orchestrates the
-user interface, data management, and predictive analytics engine to deliver
-a real-time, interactive dashboard for emergency response command staff.
-
-The application is structured into three main tabs:
-1. Operational Command: A live map and decision support gauges for immediate action.
-2. KPI Deep Dive: Advanced analytics and visualizations for deeper insights.
-3. Methodology & Insights: A detailed explanation of the underlying models.
-"""
-
-import logging
-import warnings
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import streamlit as st
+
+# --- CORRECTED: System Setup MUST be the first Streamlit command ---
+st.set_page_config(
+    page_title="RedShield AI: Phoenix v4.0",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import folium
-import geopandas as gpd  # <--- CORRECTED: Added missing import
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 
-# --- Import from refactored modules ---
+# --- Import from refactored modules (AFTER st.set_page_config) ---
 from core import DataManager, EnvFactors, PredictiveAnalyticsEngine
 from utils import ReportGenerator, load_config
 
@@ -60,12 +51,7 @@ CONSTANTS = {
     'FLOAT_TOLERANCE': 1e-6
 }
 
-# --- System Setup ---
-st.set_page_config(
-    page_title="RedShield AI: Phoenix v4.0",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- Post-Config Setup ---
 # Optimized: Clear cache on startup for fresh data during development
 st.cache_data.clear()
 warnings.filterwarnings('ignore', category=UserWarning)
