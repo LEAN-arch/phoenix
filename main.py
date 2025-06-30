@@ -331,7 +331,12 @@ class Dashboard:
             *   **Non-Homogeneous Poisson Process (NHPP):** This model forms the temporal backbone of our predictions. It understands that incident rates are not constant.
                 -   **Question it Answers:** *"What is the baseline probability of an incident at 3 AM on a Tuesday versus 6 PM on a Friday?"*
                 -   **Relevance:** Captures the predictable, cyclical nature of urban life, ensuring our baseline risk is sensitive to the time of day and day of the week.
-
+               -   **Mathematical Formulation:** The intensity function `λ(t)` is modeled as a function of time, often using a log-linear model with Fourier terms to capture cyclicity:
+                    $$
+                    \\lambda(t) = \\exp\\left( \\beta_0 + \\sum_{k=1}^{K} \\left[ \\beta_k \\cos\\left(\\frac{2\\pi kt}{T}\\right) + \\gamma_k \\sin\\left(\\frac{2\\pi kt}{T}\\right) \\right] \\right)
+                    $$
+                    where `β` and `γ` are coefficients learned from historical data and `T` is the period of the cycle (e.g., 24 hours or 168 hours).
+                    
             *   **Hawkes Process (Self-Exciting Point Process):** This is the cornerstone of our violence and cascading accident models. It operates on the principle that certain events can trigger "aftershocks."
                 -   **Question it Answers:** *"Given a shooting just occurred, what is the immediate, elevated risk of another shooting in the same area?"* or *"After a major highway collision, what is the increased likelihood of secondary accidents due to traffic build-up?"*
                 -   **Relevance:** Critical for modeling retaliatory gang violence and chain-reaction traffic incidents. It directly powers the `Trauma Clustering Score`.
@@ -340,7 +345,7 @@ class Dashboard:
                     \\lambda(t) = \\mu(t) + \\sum_{t_i < t} \\alpha \\cdot g(t - t_i)
                     $$
                     where `μ(t)` is the background rate from the NHPP, the sum is over past event times `tᵢ`, `α` is the branching ratio (strength of aftershock), and `g(t - tᵢ)` is the triggering kernel modeling the decaying influence of past events.
-            
+
             *   **Bayesian Networks:** These models represent our understanding of causal relationships. They combine static base rates with real-time environmental factors.
                 -   **Question it Answers:** *"How does a public holiday, combined with rainy weather and a major concert, collectively influence the probability of an incident?"*
                 -   **Relevance:** Allows the system to reason with expert knowledge and adapt to contextual factors like `Weather`, `Is Holiday`, and `Major Event`. It is a core driver of the baseline `Incident Probability`.
@@ -353,14 +358,33 @@ class Dashboard:
             *   **Spatiotemporal Gaussian Processes (ST-GPs):** Our `STGP_Risk` KPI is a proxy for this advanced technique. It models risk as a continuous fluid over the map.
                 -   **Question it Answers:** *"An incident occurred 500 meters from this zone's border. How much 'risk pressure' does that exert on this zone?"*
                 -   **Relevance:** Interpolates risk intelligently across the map, ensuring that proximity to danger is always accounted for, even across arbitrary zone boundaries.
-
+                -   **Mathematical Formulation:** The risk `f` at a spatiotemporal point `(s, t)` is modeled as a draw from a Gaussian Process:
+                    $$
+                    f(s, t) \\sim \\mathcal{GP}(m(s, t), k((s, t), (s', t')))
+                    $$
+                    where `m(s, t)` is the mean function and `k` is a spatiotemporal kernel, often a product of a spatial kernel (like RBF) and a temporal kernel:
+                    $$
+                    k((s, t), (s', t')) = \\sigma^2 \\exp\\left(-\\frac{\|s-s'\|^2}{2l_s^2}\\right) \\exp\\left(-\\frac{|t-t'|^2}{2l_t^2}\\right)
+                    $$
+                    The lengthscales `l_s` and `l_t` control the "range" of influence in space and time.
+           
             *   **Graph Neural Networks (GNNs):** The city's road network and zone adjacencies are treated as a complex graph. A GNN learns a deep, structural understanding of each zone's role within this network.
                 -   **Question it Answers:** *"Is this zone inherently vulnerable simply due to its position as a major crossroads, regardless of recent events?"*
                 -   **Relevance:** Identifies long-term, structural vulnerabilities that may not be apparent from recent incident data alone. It powers the `GNN_Structural_Risk`, representing a zone's intrinsic risk.
-            
+                -   **Mathematical Formulation (GCN Layer):** A GNN works by passing "messages" between connected nodes. A common layer operation is:
+                    $$
+                    H^{(l+1)} = \\sigma(\\hat{D}^{-\\frac{1}{2}} \\hat{A} \\hat{D}^{-\\frac{1}{2}} H^{(l)} W^{(l)})
+                    $$
+                    This means the new features for a node (`H^(l+1)`) are a transformed aggregate of its neighbors' previous features (`H^(l)`), where `Â` is the adjacency matrix with self-loops, `D̂` is its degree matrix, `W` is a learnable weight matrix, and `σ` is an activation function.
+           
             *   **Graph Laplacian Diffusion:** This technique models how effects (like traffic, panic, or police cordons) "spill over" from one zone to its neighbors through the road network.
                 -   **Question it Answers:** *"A major fire has shut down three blocks in Zone A. How does this increase the traffic-related accident risk in the adjacent Zone B?"*
                 -   **Relevance:** Essential for modeling the secondary effects of major incidents. It directly calculates the `Spatial Spillover Risk`.
+                -   **Mathematical Formulation:** The process is modeled by the heat diffusion equation on a graph. A single discrete step of this process is:
+                    $$
+                    r(t+1) = (I - \\epsilon L) r(t)
+                    $$
+                    where `r(t)` is the vector of zone risks, `I` is the identity matrix, `ε` is a small step size, and `L` is the normalized graph Laplacian matrix.
             """)
 
             st.markdown("---")
@@ -369,7 +393,11 @@ class Dashboard:
             *   **Lyapunov Exponents (Chaos Sensitivity Score):** A concept from Chaos Theory that measures a system's sensitivity to small changes. A high score means the system is in a fragile, unpredictable state.
                 -   **Question it Answers:** *"Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?"*
                 -   **Relevance:** This is a critical "instability alarm" for command staff. It doesn't predict a specific incident, but warns that the entire system is volatile.
-
+                -   **Mathematical Formulation (Conceptual):** It measures the exponential rate of divergence of nearby trajectories. If `δ(t)` is the separation between two trajectories over time, the largest Lyapunov exponent `λ` is estimated by:
+                    $$
+                    \\lambda \\approx \\frac{1}{t} \\ln \\frac{\\| \\delta(t) \\|}{\\| \\delta(0) \\|}
+                    $$
+                    A positive `λ` is an indicator of chaos.
             *   **Kullback-Leibler (KL) Divergence (Anomaly Score):** An information theory metric that measures how much the current pattern of incidents deviates from the historical norm.
                 -   **Question it Answers:** *"Are we seeing the right number of incidents, but in all the wrong places today? Or are we seeing a bizarre new type of incident we've never seen before?"*
                 -   **Relevance:** Detects "pattern anomalies" that simple volume-based metrics would miss. A high score is a clear signal that "today is not a normal day."
