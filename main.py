@@ -162,26 +162,144 @@ class Dashboard:
             })
 
     # --- TAB 1: OPERATIONAL COMMAND ---
+    @staticmethod
+    def _create_sparkline_plot(
+        data: List[float], 
+        normal_range: List[float], 
+        current_value_text: str, 
+        label: str, 
+        color: str,
+        high_is_bad: bool = True
+    ) -> go.Figure:
+        """
+        [SME VISUALIZATION] Creates a sophisticated and elegant sparkline plot.
+        This design is optimized for information density in a small space.
+        """
+        fig = go.Figure()
+
+        # 1. Normal Operating Range (Subtle background band)
+        fig.add_shape(
+            type="rect",
+            xref="x", yref="y",
+            x0=0, y0=normal_range[0], x1=len(data) - 1, y1=normal_range[1],
+            fillcolor="#388E3C",  # Always green for "normal"
+            opacity=0.15,
+            layer="below",
+            line_width=0,
+        )
+
+        # 2. Main Trend Line
+        fig.add_trace(go.Scatter(
+            x=list(range(len(data))),
+            y=data,
+            mode='lines',
+            line=dict(color=color, width=3),
+            hoverinfo='none'
+        ))
+
+        # 3. Current Value Marker (The prominent final dot)
+        fig.add_trace(go.Scatter(
+            x=[len(data) - 1],
+            y=[data[-1]],
+            mode='markers',
+            marker=dict(color=color, size=10, line=dict(width=2, color='white')),
+            hoverinfo='none'
+        ))
+
+        # 4. Big Current Value Annotation
+        fig.add_annotation(
+            xref="paper", yref="paper",
+            x=0.02, y=0.98,
+            text=f"<b>{current_value_text}</b>",
+            showarrow=False,
+            font=dict(size=28, color=color, family="Arial Black, sans-serif"),
+            align="left",
+            xanchor="left",
+            yanchor="top"
+        )
+        
+        # 5. Label Annotation
+        fig.add_annotation(
+            xref="paper", yref="paper",
+            x=0.98, y=0.05,
+            text=label,
+            showarrow=False,
+            font=dict(size=14, color="#666"),
+            align="right",
+            xanchor="right",
+            yanchor="bottom"
+        )
+        
+        # Determine y-axis range to give some padding
+        plot_min = min(min(data), normal_range[0])
+        plot_max = max(max(data), normal_range[1])
+        padding = (plot_max - plot_min) * 0.15
+        
+        fig.update_layout(
+            yaxis=dict(range=[plot_min - padding, plot_max + padding], visible=False),
+            xaxis=dict(visible=False),
+            showlegend=False,
+            plot_bgcolor='rgba(240, 240, 240, 0.95)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=5, r=5, t=5, b=5),
+            height=120
+        )
+        return fig
 
     def _render_operational_command_tab(self):
         """Renders the main operational command view."""
+        # --- This part is UNCHANGED ---
         self._render_system_status_bar()
+        
+        # --- SME Addition: Add sparkline plots in an expander for detailed trends ---
+        with st.expander("Show System Trend Details"):
+            kpi_df = st.session_state.kpi_df
+            spark_data = st.session_state.sparkline_data
+            
+            if not kpi_df.empty and spark_data:
+                try:
+                    # --- Data Extraction ---
+                    inc_val = len(st.session_state.current_incidents)
+                    amb_val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+                    risk_val = kpi_df['Integrated_Risk_Score'].max()
+                    adeq_val = kpi_df['Resource Adequacy Index'].mean()
+
+                    inc_data = spark_data.get('active_incidents', {'values': [inc_val]*5, 'range': [inc_val-1, inc_val+1]})
+                    amb_data = spark_data.get('available_ambulances', {'values': [amb_val]*5, 'range': [amb_val-1, amb_val+1]})
+                    risk_data = spark_data.get('max_risk', {'values': [risk_val]*5, 'range': [0, 1]})
+                    adeq_data = spark_data.get('adequacy', {'values': [adeq_val]*5, 'range': [0, 1]})
+                    
+                    def get_status_color(val, normal_range, high_is_bad=True):
+                        low, high = normal_range
+                        if (high_is_bad and val > high) or (not high_is_bad and val < low): return "#D32F2F"
+                        if (high_is_bad and val > low) or (not high_is_bad and val < high): return "#FBC02D"
+                        return "#388E3C"
+
+                    cols = st.columns(4)
+                    with cols[0]:
+                        st.plotly_chart(self._create_sparkline_plot(inc_data['values'], inc_data['range'], f"{inc_val}", "Active Incidents", get_status_color(inc_val, inc_data['range'])), use_container_width=True)
+                    with cols[1]:
+                        st.plotly_chart(self._create_sparkline_plot(amb_data['values'], amb_data['range'], f"{amb_val}", "Available Units", get_status_color(amb_val, amb_data['range'], False)), use_container_width=True)
+                    with cols[2]:
+                        st.plotly_chart(self._create_sparkline_plot(risk_data['values'], risk_data['range'], f"{risk_val:.3f}", "Max Zone Risk", get_status_color(risk_val, risk_data['range'])), use_container_width=True)
+                    with cols[3]:
+                        st.plotly_chart(self._create_sparkline_plot(adeq_data['values'], adeq_data['range'], f"{adeq_val:.1%}", "System Adequacy", get_status_color(adeq_val, adeq_data['range'], False)), use_container_width=True)
+                
+                except Exception as e:
+                    logger.error(f"Error rendering sparkline plots: {e}", exc_info=True)
+                    st.warning("Could not display trend details.")
+            else:
+                st.info("Trend data is not yet available.")
+        
+        # --- This part is UNCHANGED ---
         st.divider()
         col1, col2 = st.columns([3, 2])
         with col1:
             st.subheader("Live Operations Map")
-            map_data = self._prepare_map_data(
-                kpi_df=st.session_state.kpi_df,
-                _zones_gdf=self.dm.zones_gdf
-            )
+            map_data = self._prepare_map_data(kpi_df=st.session_state.kpi_df, _zones_gdf=self.dm.zones_gdf)
             if map_data is not None:
-                map_object = self._render_dynamic_map(
-                    map_gdf=map_data,
-                    incidents=st.session_state.current_incidents,
-                    _ambulances=self.dm.ambulances,
-                )
-                if map_object:
-                    st_folium(map_object, use_container_width=True, height=600)
+                map_object = self._render_dynamic_map(map_gdf=map_data, incidents=st.session_state.current_incidents, _ambulances=self.dm.ambulances)
+                if map_object: st_folium(map_object, use_container_width=True, height=600)
         with col2:
             st.subheader("Decision Support")
             self._plot_system_pressure_gauge()
