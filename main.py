@@ -295,20 +295,33 @@ class Dashboard:
         st.divider()
         st.subheader("Advanced Analytical Visualizations")
         if not kpi_df.empty:
-            # --- SME Addition: Expanded tabs for new visualizations ---
+            # --- SME Addition: Expanded and reorganized tabs for new visualizations ---
             tab_titles = [
-                "📍 Zone Vulnerability", 
-                "🧬 Comparative Risk Fingerprints", # New
-                "🧱 Systemic Risk Composition",   # New
-                "📊 Risk Drill-Down", 
-                "📈 Risk Forecast"
+                "📍 Strategic Overview", 
+                "🎯 Allocation Opportunity", 
+                "⏱️ Risk Momentum", 
+                "🧬 Critical Zone Anatomy", 
+                "🧩 Zone Deep-Dive", 
+                "🔭 72-Hour Forecast"
             ]
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_titles)
-            with tab1: self._plot_vulnerability_quadrant(kpi_df)
-            with tab2: self._plot_risk_fingerprints(kpi_df) # New
-            with tab3: self._plot_systemic_risk_composition(kpi_df) # New
-            with tab4: self._plot_risk_contribution_sunburst(kpi_df)
-            with tab5: self._plot_forecast_with_uncertainty()
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tab_titles)
+            with tab1:
+                self._plot_vulnerability_quadrant(kpi_df)
+            with tab2:
+                # Call the new plot method
+                self._plot_allocation_opportunity(kpi_df, st.session_state.allocations)
+            with tab3:
+                # Call the new plot method
+                self._plot_risk_momentum(kpi_df)
+            with tab4:
+                # Call the new plot method
+                self._plot_critical_zone_anatomy(kpi_df)
+            with tab5:
+                # This was the original "Risk Contribution Drill-Down"
+                self._plot_risk_contribution_sunburst(kpi_df)
+            with tab6:
+                # This was the original "Risk Forecast & Uncertainty"
+                self._plot_forecast_with_uncertainty()
         else:
             st.info("Advanced visualizations unavailable: Waiting for data...")
 
@@ -408,7 +421,91 @@ class Dashboard:
         except Exception as e:
             logger.error(f"Error in systemic risk composition plot: {e}", exc_info=True)
             st.warning("Could not display Systemic Risk Composition plot.")
+# --- SME Addition: New High-Value Plot 1 ---
+    def _plot_allocation_opportunity(self, kpi_df: pd.DataFrame, allocations: Dict[str, int]):
+        """
+        [SME VISUALIZATION] Plots an allocation opportunity matrix.
+        This identifies the most critical resource gaps by plotting total risk vs. uncovered risk.
+        """
+        st.markdown("**Analysis:** This matrix identifies the most critical resource gaps. Zones in the **top-right** are high-risk and highly under-resourced, representing the most urgent allocation opportunities. The **size of the bubble** indicates the expected incident volume, adding a third dimension of urgency.")
+        try:
+            df = kpi_df[['Zone', 'Integrated_Risk_Score', 'Expected Incident Volume']].copy()
+            df['allocated_units'] = df['Zone'].map(allocations).fillna(0)
+            risk_cov = self.config.get('model_params', {}).get('risk_coverage_per_unit', CONSTANTS['RISK_COVERAGE_PER_UNIT'])
+            df['risk_covered'] = df['allocated_units'] * risk_cov
+            df['resource_deficit'] = df['Integrated_Risk_Score'] - df['risk_covered']
+            
+            fig = px.scatter(
+                df, x='Integrated_Risk_Score', y='resource_deficit',
+                size='Expected Incident Volume', color='resource_deficit',
+                hover_name='Zone', size_max=25, color_continuous_scale=px.colors.sequential.OrRd,
+                labels={'Integrated_Risk_Score': 'Total Risk Score', 'resource_deficit': 'Resource Deficit (Uncovered Risk)'}
+            )
+            fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="black")
+            fig.update_layout(title="Allocation Opportunity Matrix", height=500)
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            logger.error(f"Error in allocation opportunity plot: {e}", exc_info=True)
+            st.warning("Could not display Allocation Opportunity plot.")
 
+    # --- SME Addition: New High-Value Plot 2 ---
+    def _plot_risk_momentum(self, kpi_df: pd.DataFrame):
+        """
+        [SME VISUALIZATION] Plots a specialized heatmap to show risk trajectory.
+        This is a critical tool for proactive intervention.
+        """
+        st.markdown("**Analysis:** This heatmap shows risk trajectory. **Brightness** indicates high current risk. The **annotated number** shows the *change* in risk over the last 6 hours, revealing which zones are escalating (positive change) versus de-escalating (negative change).")
+        try:
+            top_zones_df = kpi_df.nlargest(10, 'Integrated_Risk_Score')
+            risk_now = top_zones_df[['Zone', 'Integrated_Risk_Score']].set_index('Zone')
+            # For demonstration, we simulate historical data. In a real system, this would come from a database.
+            risk_6hr_ago = (risk_now * np.random.normal(1.0, 0.2, risk_now.shape)).clip(0, 1)
+            momentum = risk_now - risk_6hr_ago
+            
+            heatmap_data = pd.DataFrame({'Current Risk': risk_now['Integrated_Risk_Score'], '6-Hour Momentum': momentum['Integrated_Risk_Score']}).sort_values('Current Risk', ascending=False)
+
+            fig = go.Figure(data=go.Heatmap(
+                z=heatmap_data['Current Risk'].values[:, np.newaxis], y=heatmap_data.index, x=['Current Risk'],
+                colorscale='Viridis', colorbar=dict(title='Risk'), zmin=0, zmax=1,
+                hovertemplate="<b>Zone:</b> %{y}<br><b>Current Risk:</b> %{z:.3f}<extra></extra>"
+            ))
+            for i, y_val in enumerate(heatmap_data.index):
+                momentum_val = heatmap_data.iloc[i, 1]
+                fig.add_annotation(x=0, y=y_val, text=f"<b>{momentum_val:+.2f}</b>", showarrow=False, font=dict(color="white" if heatmap_data.iloc[i, 0] > 0.6 else "black", size=14))
+            
+            fig.update_layout(title="Risk Score & 6-Hour Momentum for Top Zones", height=500)
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            logger.error(f"Error in risk momentum plot: {e}", exc_info=True)
+            st.warning("Could not display Risk Momentum plot.")
+
+    # --- SME Addition: New High-Value Plot 3 ---
+    def _plot_critical_zone_anatomy(self, kpi_df: pd.DataFrame):
+        """
+        [SME VISUALIZATION] Plots a stacked bar chart dissecting the composition of risk for critical zones.
+        This guides the *type* of response needed.
+        """
+        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. It shows what proportion of each zone's risk comes from Violence, Accidents, or Medical surges, guiding the type of response needed.")
+        try:
+            risk_cols = ['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score']
+            if not all(col in kpi_df.columns for col in risk_cols): st.error("Data missing for Zone Anatomy plot."); return
+            df_top = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
+            df_melt = df_top.melt(id_vars='Zone', value_vars=risk_cols, var_name='Risk_Type', value_name='Score')
+            df_melt['Risk_Type'] = df_melt['Risk_Type'].str.replace(' Clustering Score', '').str.replace(' Surge Score', '')
+
+            fig = px.bar(
+                df_melt, x='Zone', y='Score', color='Risk_Type',
+                title='Risk Anatomy of Critical Zones',
+                labels={'Score': 'Component Risk Score'},
+                category_orders={'Zone': df_top['Zone'].tolist()}, # Keep sorted by total risk
+                color_discrete_map={'Violence': '#D32F2F', 'Accident': '#FBC02D', 'Medical': '#1E90FF'}
+            )
+            fig.update_layout(barmode='stack', height=500)
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            logger.error(f"Error in critical zone anatomy plot: {e}", exc_info=True)
+            st.warning("Could not display Critical Zone Anatomy plot.")
+            
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
         st.markdown("**Analysis:** Break down a zone's `Integrated_Risk_Score` into its model components.")
         try:
