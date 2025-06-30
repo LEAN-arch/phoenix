@@ -810,77 +810,85 @@ class Dashboard:
     # --- SME Addition: New High-Value Plot 3 (Commercial Grade, Improved) ---
     def _plot_critical_zone_anatomy(self, kpi_df: pd.DataFrame):
         """
-        [SME VISUALIZATION] Plots a detailed Risk Composition Profile using a Connected Dot Plot (Dumbbell Plot).
-        This elegant design allows for easy comparison of risk components across different zones.
+        [SME VISUALIZATION] Plots a detailed Risk Composition Profile.
+        This dissects the anatomy of risk for critical zones, guiding the type of response.
         """
-        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. Each horizontal line represents a zone, ordered by total risk. The **position of the dots** shows the magnitude of each primary risk driver (Violence, Accident, Medical), allowing for direct comparison across zones. The **total integrated risk score** is annotated on the right for context.")
+        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. The **colored segments** show the proportional contribution of each risk driver. The **grey lollipop marker** on the right shows the absolute `Integrated_Risk_Score`, providing crucial context on the overall magnitude of the threat.")
         try:
             risk_cols = ['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score']
-            if not all(col in kpi_df.columns for col in risk_cols):
-                st.error("Data missing for Zone Anatomy plot.")
-                return
+            if not all(col in kpi_df.columns for col in risk_cols): st.error("Data missing for Zone Anatomy plot."); return
 
             df_top = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
-            df_top = df_top.sort_values('Integrated_Risk_Score', ascending=True) # Sort for bottom-to-top display
+            
+            # Normalize the risk components for each zone
+            df_top['total_component_risk'] = df_top[risk_cols].sum(axis=1) + 1e-9 # Avoid division by zero
+            df_norm = df_top.copy()
+            for col in risk_cols:
+                df_norm[col] = (df_top[col] / df_top['total_component_risk']) * 100
 
+            # Sort by total integrated risk for a clear hierarchy
+            df_norm = df_norm.sort_values('Integrated_Risk_Score', ascending=True)
+            
             fig = go.Figure()
             
-            colors = {'Violence Clustering Score': '#D32F2F', 'Accident Clustering Score': '#FBC02D', 'Medical Surge Score': '#1E90FF'}
-
-            # Add the connecting lines for each zone
-            for i, row in df_top.iterrows():
-                risk_values = sorted([row[col] for col in risk_cols])
-                fig.add_shape(
-                    type='line',
-                    x0=risk_values[0], y0=row['Zone'],
-                    x1=risk_values[-1], y1=row['Zone'],
-                    line=dict(color='rgba(0,0,0,0.2)', width=2)
-                )
-
-            # Add the dots for each risk component
-            for col, color in colors.items():
-                fig.add_trace(go.Scatter(
-                    x=df_top[col],
-                    y=df_top['Zone'],
-                    mode='markers',
-                    name=col.replace(' Clustering Score', '').replace(' Surge Score', ''),
-                    marker=dict(
-                        color=color,
-                        size=15,
-                        line=dict(width=1, color='white')
-                    ),
-                    hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Type:</b> %{name}<br><b>Score:</b> %{x:.3f}<extra></extra>"
-                ))
+            colors = {'Violence': '#D32F2F', 'Accident': '#FBC02D', 'Medical': '#1E90FF'}
             
-            # Add annotations for the total Integrated Risk Score on the right
-            for i, row in df_top.iterrows():
-                fig.add_annotation(
-                    xref='paper', yref='y',
-                    x=1.01, y=row['Zone'],
-                    text=f"<b>{row['Integrated_Risk_Score']:.2f}</b>",
-                    showarrow=False,
-                    font=dict(size=14, color='#37474F', family="Arial Black, sans-serif"),
-                    align="left"
-                )
+            for risk_type, color in colors.items():
+                col_name = f"{risk_type} Clustering Score" if risk_type != 'Medical' else 'Medical Surge Score'
+                fig.add_trace(go.Bar(
+                    y=df_norm['Zone'],
+                    x=df_norm[col_name],
+                    name=risk_type,
+                    orientation='h',
+                    marker=dict(color=color, line=dict(color='white', width=1.5)),
+                    text=df_norm[col_name].apply(lambda x: f'{x:.0f}%' if x > 10 else ''), # Only show significant percentages
+                    textposition='inside',
+                    insidetextanchor='middle',
+                    insidetextfont=dict(color='white', size=11, family='Arial Black'),
+                    hovertemplate="<b>%{y}</b><br>%{name}: %{x:.1f}%<extra></extra>"
+                ))
+
+            # Add a secondary axis for the absolute Integrated Risk Score
+            fig.add_trace(go.Scatter(
+                x=[105] * len(df_norm), # Position to the right of the 100% bar
+                y=df_norm['Zone'],
+                mode='markers+text',
+                marker=dict(color='#607D8B', size=10, symbol='circle', line=dict(width=1, color='white')),
+                text=df_norm['Integrated_Risk_Score'].apply(lambda x: f'{x:.2f}'),
+                textposition="middle right",
+                textfont=dict(size=12, color='#37474F'),
+                hovertemplate="<b>%{y}</b><br>Total Risk: %{text}<extra></extra>",
+                showlegend=False
+            ))
+            
+            # Add line segments for the "lollipop" effect
+            for i, row in df_norm.iterrows():
+                 fig.add_shape(type='line', x0=100, y0=row['Zone'], x1=105, y1=row['Zone'], line=dict(color='#B0BEC5', width=1.5))
+
 
             fig.update_layout(
+                barmode='stack',
                 title_text="<b>Risk Anatomy of Critical Zones</b>",
                 title_x=0.5,
-                xaxis_title="Component Risk Score",
-                yaxis_title=None,
+                xaxis=dict(
+                    showgrid=False,
+                    showline=False,
+                    showticklabels=False,
+                    zeroline=False,
+                    range=[0, 115] # Extend range to accommodate annotations
+                ),
+                yaxis=dict(
+                    showgrid=False,
+                    showline=False,
+                    showticklabels=True,
+                    title=None,
+                ),
                 height=500,
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 legend_title_text='Risk Driver',
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font_size=12),
-                xaxis=dict(
-                    showgrid=True,
-                    gridcolor='rgba(221, 221, 221, 0.7)',
-                    zeroline=False,
-                    range=[0, max(0.6, df_top[risk_cols].max().max() * 1.1)] # Ensure axis has reasonable scale
-                ),
-                yaxis=dict(showgrid=False),
-                margin=dict(t=80, b=40, l=40, r=60) # Add right margin for annotations
+                margin=dict(t=80, b=40, l=40, r=40)
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
@@ -1067,18 +1075,9 @@ class Dashboard:
                 - **Overall Relevance in the System:** Queueing theory provides a robust, theoretical foundation for the `Resource Adequacy Index` and informs routing decisions. Instead of a simple penalty for a busy hospital, it allows the system to calculate the *actual expected delay*, leading to smarter assignments.
                 - **The Question it Answers:** "If we send another ambulance to Hospital X, what is the probability it will have to wait more than 15 minutes to offload the patient, given their current patient load and our predicted arrival rate of new incidents?"
                 - **Mathematical Formulation (M/M/c Model):** For a system with `c` servers (e.g., ER beds), a Poisson arrival rate `λ` (from our incident predictions), and an exponential service rate `μ`, the probability of an arriving patient having to wait is given by the Erlang-C formula:
-                    st.latex(r'''
-                    A = \frac{(\lambda/\mu)^c}{c!}
-                    ''')
-                    st.latex(r'''
-                    B = \sum_{k=0}^{c-1} \frac{(\lambda/\mu)^k}{k!}
-                    ''')
-                    st.markdown("""
-                                    The full Erlang-C formula, which also accounts for the probability that a new arrival can be immediately served, is expressed as:
-                    """)
-                    st.latex(r'''
-                    P_{\text{wait}} = \frac{A}{B + A \cdot \frac{1}{1 - \lambda/(c\mu)}}
-                    ''')
+                    $$
+                    P_{\text{wait}} = C(c, \lambda/\mu) = \frac{(\lambda/\mu)^c / c!}{ ((\lambda/\mu)^c / c!) + (1 - \lambda/(c\mu)) \sum_{k=0}^{c-1} (\lambda/\mu)^k / k!}
+                    $$
                 - **Mathematical Relevance:** This is a cornerstone of Operations Research, providing a powerful analytical framework to understand and optimize stochastic systems defined by random arrivals and service times, which perfectly describes an emergency response network.
             """)
 
