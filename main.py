@@ -52,7 +52,6 @@ CONSTANTS = {
 }
 
 # --- Post-Config Setup ---
-# Optimized: Clear cache on startup for fresh data during development
 st.cache_data.clear()
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -80,11 +79,9 @@ class EnvFactorsWithTolerance(EnvFactors):
         if not isinstance(other, EnvFactors):
             return NotImplemented
 
-        # Check float attributes with tolerance
         for attr in ['traffic_level', 'air_quality_index', 'hospital_divert_status']:
             if abs(getattr(self, attr, 0) - getattr(other, attr, 0)) > CONSTANTS['FLOAT_TOLERANCE']:
                 return False
-        # Check non-float attributes directly
         for attr in ['is_holiday', 'weather', 'major_event', 'heatwave_alert',
                      'day_type', 'time_of_day', 'public_event_type',
                      'police_activity', 'school_in_session']:
@@ -104,36 +101,25 @@ class Dashboard:
         self._initialize_session_state()
 
     def _initialize_session_state(self):
-        """
-        Initializes all required session state keys using a centralized,
-        idempotent function for robustness and clarity.
-        """
-        # Calculate a robust fallback population density once
+        """Initializes all required session state keys if they don't exist."""
         if 'avg_pop_density' not in st.session_state:
             if not self.dm.zones_gdf.empty and 'population' in self.dm.zones_gdf.columns:
                 st.session_state['avg_pop_density'] = self.dm.zones_gdf['population'].mean()
             else:
                 st.session_state['avg_pop_density'] = CONSTANTS['FALLBACK_POP_DENSITY']
-                logger.warning("zones_gdf is empty or missing 'population'; using fallback density.")
+                logger.warning("zones_gdf empty or missing 'population'; using fallback density.")
 
-        # Define default states in a dictionary for cleaner initialization
         default_states = {
-            'historical_data': [],
-            'kpi_df': pd.DataFrame(),
-            'forecast_df': pd.DataFrame(),
-            'allocations': {},
-            'sparkline_data': {},
-            'current_incidents': [],
+            'historical_data': [], 'kpi_df': pd.DataFrame(), 'forecast_df': pd.DataFrame(),
+            'allocations': {}, 'sparkline_data': {}, 'current_incidents': [],
             'env_factors': EnvFactorsWithTolerance(
                 is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False,
                 population_density=st.session_state['avg_pop_density'],
                 air_quality_index=50.0, heatwave_alert=False, day_type='Weekday',
                 time_of_day='Midday', public_event_type='None',
-                hospital_divert_status=0.0, police_activity='Normal',
-                school_in_session=True
+                hospital_divert_status=0.0, police_activity='Normal', school_in_session=True
             )
         }
-
         for key, value in default_states.items():
             if key not in st.session_state:
                 st.session_state[key] = value
@@ -142,50 +128,34 @@ class Dashboard:
         """Main rendering method for the entire dashboard."""
         st.title("RedShield AI: Phoenix v4.0")
         st.markdown("##### Proactive Emergency Response & Resource Allocation Platform")
-
         self._render_sidebar()
 
-        # Run the core analytics pipeline
         with st.spinner("Executing Advanced Analytics & Optimization Pipeline..."):
             self._run_analytics_pipeline()
 
-        # Render UI tabs
         tab1, tab2, tab3 = st.tabs(["🔥 Operational Command", "📊 KPI Deep Dive", "🧠 Methodology & Insights"])
-        with tab1:
-            self._render_operational_command_tab()
-        with tab2:
-            self._render_kpi_deep_dive_tab()
-        with tab3:
-            self._render_methodology_tab()
+        with tab1: self._render_operational_command_tab()
+        with tab2: self._render_kpi_deep_dive_tab()
+        with tab3: self._render_methodology_tab()
 
     def _run_analytics_pipeline(self):
-        """
-        Executes the analytics pipeline and updates session state.
-        This centralized function includes robust error handling.
-        """
+        """Executes the analytics pipeline and updates session state."""
         try:
             env_factors = st.session_state.env_factors
             historical_data = st.session_state.historical_data
             current_incidents = self.dm.get_current_incidents(env_factors)
-
             kpi_df, sparkline_data = self.engine.generate_kpis_with_sparklines(
                 historical_data, env_factors, current_incidents
             )
             forecast_df = self.engine.generate_forecast(kpi_df)
             allocations = self.engine.generate_allocation_recommendations(kpi_df)
-
-            # Update session state in a single, efficient call
             st.session_state.update({
-                'kpi_df': kpi_df,
-                'forecast_df': forecast_df,
-                'allocations': allocations,
-                'sparkline_data': sparkline_data,
-                'current_incidents': current_incidents
+                'kpi_df': kpi_df, 'forecast_df': forecast_df, 'allocations': allocations,
+                'sparkline_data': sparkline_data, 'current_incidents': current_incidents
             })
         except Exception as e:
             logger.error(f"Analytics pipeline failed: {e}", exc_info=True)
             st.error(f"Error in analytics pipeline: {e}. Check logs for details.")
-            # Ensure a clean state on failure to prevent downstream rendering errors
             st.session_state.update({
                 'kpi_df': pd.DataFrame(), 'forecast_df': pd.DataFrame(),
                 'allocations': {}, 'sparkline_data': {}
@@ -197,20 +167,18 @@ class Dashboard:
         """Renders the main operational command view."""
         self._render_system_status_bar()
         st.divider()
-
         col1, col2 = st.columns([3, 2])
         with col1:
             st.subheader("Live Operations Map")
-            # Optimized: Pass data from session state to a cached rendering function
             map_object = self._render_dynamic_map(
                 kpi_df=st.session_state.kpi_df,
                 incidents=st.session_state.current_incidents,
-                zones_gdf=self.dm.zones_gdf,
-                ambulances=self.dm.ambulances,
+                # Pass unhashable objects with a leading underscore
+                _zones_gdf=self.dm.zones_gdf,
+                _ambulances=self.dm.ambulances,
             )
             if map_object:
                 st_folium(map_object, use_container_width=True, height=600)
-
         with col2:
             st.subheader("Decision Support")
             self._plot_system_pressure_gauge()
@@ -227,370 +195,190 @@ class Dashboard:
         """
 
     def _render_system_status_bar(self):
-        """Renders the top-level system health status bar using HTML for performance."""
+        """Renders the top-level system health status bar."""
         st.subheader("System Health Status")
-        kpi_df = st.session_state.kpi_df
-        sparkline_data = st.session_state.sparkline_data
-
-        if kpi_df.empty or not sparkline_data:
+        kpi_df, spark_data = st.session_state.kpi_df, st.session_state.sparkline_data
+        if kpi_df.empty or not spark_data:
             st.info("System status unavailable: Waiting for data...")
             return
-
         try:
-            # --- Data Extraction ---
-            inc_val = len(st.session_state.current_incidents)
-            amb_val = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
-            risk_val = kpi_df['Integrated_Risk_Score'].max()
-            adeq_val = kpi_df['Resource Adequacy Index'].mean()
+            inc_val, amb_val = len(st.session_state.current_incidents), sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
+            risk_val, adeq_val = kpi_df['Integrated_Risk_Score'].max(), kpi_df['Resource Adequacy Index'].mean()
+            inc_data, amb_data, risk_data, adeq_data = (
+                spark_data.get('active_incidents', {'values': [inc_val], 'range': [inc_val-1, inc_val+1]}),
+                spark_data.get('available_ambulances', {'values': [amb_val], 'range': [amb_val-1, amb_val+1]}),
+                spark_data.get('max_risk', {'values': [risk_val], 'range': [0, 1]}),
+                spark_data.get('adequacy', {'values': [adeq_val], 'range': [0, 1]}))
 
-            inc_data = sparkline_data.get('active_incidents', {'values': [inc_val], 'range': [inc_val-1, inc_val+1]})
-            amb_data = sparkline_data.get('available_ambulances', {'values': [amb_val], 'range': [amb_val-1, amb_val+1]})
-            risk_data = sparkline_data.get('max_risk', {'values': [risk_val], 'range': [0, 1]})
-            adeq_data = sparkline_data.get('adequacy', {'values': [adeq_val], 'range': [0, 1]})
+            def get_color(v, r, high_is_bad=True): return "#D32F2F" if (high_is_bad and v > r[1]) or (not high_is_bad and v < r[0]) else "#FBC02D" if (high_is_bad and v > r[0]) or (not high_is_bad and v < r[1]) else "#388E3C"
+            def get_trend(d): return "▲" if len(d) > 1 and d[-1] > d[-2] else "▼" if len(d) > 1 and d[-1] < d[-2] else "▬"
 
-            # --- Logic ---
-            def get_status_color(val, normal_range, high_is_bad=True):
-                low, high = normal_range
-                if (high_is_bad and val > high) or (not high_is_bad and val < low): return "#D32F2F"  # Critical
-                if (high_is_bad and val > low) or (not high_is_bad and val < high): return "#FBC02D"  # Elevated
-                return "#388E3C"  # Normal
-
-            def get_trend_arrow(data: List[float]) -> str:
-                if len(data) < 2: return "▬"
-                return "▲" if data[-1] > data[-2] else "▼" if data[-1] < data[-2] else "▬"
-
-            # --- HTML Generation ---
-            metrics_html = [
-                self._create_status_metric("Active Incidents", f"{inc_val}", get_trend_arrow(inc_data['values']), get_status_color(inc_val, inc_data['range'])),
-                self._create_status_metric("Available Units", f"{amb_val}", get_trend_arrow(amb_data['values']), get_status_color(amb_val, amb_data['range'], high_is_bad=False)),
-                self._create_status_metric("Max Zone Risk", f"{risk_val:.3f}", get_trend_arrow(risk_data['values']), get_status_color(risk_val, risk_data['range'])),
-                self._create_status_metric("System Adequacy", f"{adeq_val:.1%}", get_trend_arrow(adeq_data['values']), get_status_color(adeq_val, adeq_data['range'], high_is_bad=False)),
-            ]
-            # Remove the border from the last element for a clean look
-            metrics_html[-1] = metrics_html[-1].replace('border-right: 1px solid #fff4;', '')
-
-            st.markdown(f"""
-            <div style="width: 100%; display: flex; border: 1px solid #444; border-radius: 5px; overflow: hidden; font-family: sans-serif;">
-                {''.join(metrics_html)}
-            </div>
-            """, unsafe_allow_html=True)
-
+            metrics = [
+                self._create_status_metric("Active Incidents", f"{inc_val}", get_trend(inc_data['values']), get_color(inc_val, inc_data['range'])),
+                self._create_status_metric("Available Units", f"{amb_val}", get_trend(amb_data['values']), get_color(amb_val, amb_data['range'], False)),
+                self._create_status_metric("Max Zone Risk", f"{risk_val:.3f}", get_trend(risk_data['values']), get_color(risk_val, risk_data['range'])),
+                self._create_status_metric("System Adequacy", f"{adeq_val:.1%}", get_trend(adeq_data['values']), get_color(adeq_val, adeq_data['range'], False))]
+            metrics[-1] = metrics[-1].replace('border-right: 1px solid #fff4;', '')
+            st.markdown(f'<div style="display:flex; border:1px solid #444; border-radius:5px; overflow:hidden;">{"".join(metrics)}</div>', unsafe_allow_html=True)
         except Exception as e:
-            logger.error(f"Error rendering system status bar: {e}", exc_info=True)
+            logger.error(f"Error rendering status bar: {e}", exc_info=True)
             st.warning(f"Could not render system status bar: {e}")
 
+    # CORRECTED: Added leading underscores to unhashable arguments
     @st.cache_data(show_spinner="Rendering Operations Map...")
-    def _render_dynamic_map(_self, kpi_df: pd.DataFrame, incidents: List[Dict], zones_gdf: gpd.GeoDataFrame, ambulances: Dict) -> Optional[folium.Map]:
-        """
-        Renders the Folium map. Cached for performance.
-        `_self` is used as the first argument because Streamlit cannot cache instance methods.
-        """
-        if zones_gdf.empty or kpi_df.empty or 'Zone' not in kpi_df.columns:
+    def _render_dynamic_map(_self, kpi_df: pd.DataFrame, incidents: List[Dict], _zones_gdf: gpd.GeoDataFrame, _ambulances: Dict) -> Optional[folium.Map]:
+        """Renders the Folium map. Cached for performance."""
+        if _zones_gdf.empty or kpi_df.empty or 'Zone' not in kpi_df.columns:
             st.warning("Map data not yet available.")
             return None
-
         try:
-            map_gdf = zones_gdf.join(kpi_df.set_index('Zone'), on='name')
-            center = zones_gdf.union_all().centroid
+            map_gdf = _zones_gdf.join(kpi_df.set_index('Zone'), on='name')
+            center = _zones_gdf.union_all().centroid
             m = folium.Map(location=[center.y, center.x], zoom_start=11, tiles="cartodbpositron", prefer_canvas=True)
-
             folium.Choropleth(
-                geo_data=map_gdf.to_json(), data=map_gdf,
-                columns=['name', 'Integrated_Risk_Score'], key_on='feature.properties.name',
-                fill_color='YlOrRd', fill_opacity=0.7, line_opacity=0.2,
+                geo_data=map_gdf.to_json(), data=map_gdf, columns=['name', 'Integrated_Risk_Score'],
+                key_on='feature.properties.name', fill_color='YlOrRd', fill_opacity=0.7, line_opacity=0.2,
                 legend_name='Integrated Risk Score', name="Risk Heatmap"
             ).add_to(m)
 
             incidents_fg = MarkerCluster(name='Live Incidents', show=True).add_to(m)
             for inc in incidents:
-                loc = inc.get('location')
-                if loc and 'lat' in loc and 'lon' in loc:
-                    icon_type = "car-crash" if "Accident" in inc.get('type', '') else "first-aid"
-                    folium.Marker(
-                        location=[loc['lat'], loc['lon']],
-                        tooltip=f"Type: {inc.get('type', 'N/A')}<br>Triage: {inc.get('triage', 'N/A')}",
-                        icon=folium.Icon(color='red', icon=icon_type, prefix='fa')
-                    ).add_to(incidents_fg)
+                if (loc := inc.get('location')) and 'lat' in loc and 'lon' in loc:
+                    icon = "car-crash" if "Accident" in inc.get('type', '') else "first-aid"
+                    folium.Marker([loc['lat'], loc['lon']], tooltip=f"Type: {inc.get('type','N/A')}<br>Triage: {inc.get('triage','N/A')}",
+                                  icon=folium.Icon(color='red', icon=icon, prefix='fa')).add_to(incidents_fg)
 
             ambulance_fg = folium.FeatureGroup(name='Available Unit Reach (5-min)', show=False).add_to(m)
-            for amb_id, amb_data in ambulances.items():
+            for amb_id, amb_data in _ambulances.items():
                 if amb_data.get('status') == 'Disponible':
                     loc = amb_data.get('location')
-                    folium.Circle(
-                        location=[loc.y, loc.x], radius=2400, # Approx 1.5 miles
-                        color='#1E90FF', fill=True, fill_opacity=0.1,
-                        tooltip=f"Unit {amb_id} Reach"
-                    ).add_to(ambulance_fg)
-                    folium.Marker(
-                        location=[loc.y, loc.x],
-                        icon=folium.Icon(color='blue', icon='ambulance', prefix='fa'),
-                        tooltip=f"Unit {amb_id} (Available)"
-                    ).add_to(ambulance_fg)
-
+                    folium.Circle([loc.y, loc.x], radius=2400, color='#1E90FF', fill=True, fill_opacity=0.1, tooltip=f"Unit {amb_id} Reach").add_to(ambulance_fg)
+                    folium.Marker([loc.y, loc.x], icon=folium.Icon(color='blue', icon='ambulance', prefix='fa'), tooltip=f"Unit {amb_id} (Available)").add_to(ambulance_fg)
+            
             folium.LayerControl().add_to(m)
             return m
         except Exception as e:
-            logger.error(f"Failed to render dynamic map: {e}", exc_info=True)
-            st.error(f"Error rendering dynamic map: {e}")
+            logger.error(f"Failed to render map: {e}", exc_info=True)
+            st.error(f"Error rendering map: {e}")
             return None
 
     def _plot_system_pressure_gauge(self):
-        """Displays a gauge for the overall system pressure."""
+        """Displays a gauge for overall system pressure."""
         try:
-            kpi_df = st.session_state.kpi_df
-            env_factors = st.session_state.env_factors
+            kpi_df, env = st.session_state.kpi_df, st.session_state.env_factors
             if kpi_df.empty: return
-
-            traffic_norm = np.clip((env_factors.traffic_level - CONSTANTS['TRAFFIC_MIN']) /
-                                   (CONSTANTS['TRAFFIC_MAX'] - CONSTANTS['TRAFFIC_MIN']), 0, 1)
-            hospital_norm = env_factors.hospital_divert_status
-            adequacy_norm = 1 - kpi_df['Resource Adequacy Index'].mean()
-
-            pressure_score = (traffic_norm * CONSTANTS['PRESSURE_WEIGHTS']['traffic'] +
-                              hospital_norm * CONSTANTS['PRESSURE_WEIGHTS']['hospital'] +
-                              adequacy_norm * CONSTANTS['PRESSURE_WEIGHTS']['adequacy'])
-            
-            display_score = min(pressure_score * 125, 100)
-
+            t_norm = np.clip((env.traffic_level - CONSTANTS['TRAFFIC_MIN']) / (CONSTANTS['TRAFFIC_MAX'] - CONSTANTS['TRAFFIC_MIN']), 0, 1)
+            h_norm, a_norm = env.hospital_divert_status, 1 - kpi_df['Resource Adequacy Index'].mean()
+            score = (t_norm*CONSTANTS['PRESSURE_WEIGHTS']['traffic'] + h_norm*CONSTANTS['PRESSURE_WEIGHTS']['hospital'] + a_norm*CONSTANTS['PRESSURE_WEIGHTS']['adequacy']) * 125
             fig = go.Figure(go.Indicator(
-                mode="gauge+number", value=display_score,
-                title={'text': "System Pressure", 'font': {'size': 20}},
+                mode="gauge+number", value=min(score, 100), title={'text': "System Pressure"},
                 gauge={'axis': {'range': [0, 100]}, 'bar': {'color': "#222"},
-                       'steps': [
-                           {'range': [0, 40], 'color': '#388E3C'},
-                           {'range': [40, 75], 'color': '#FBC02D'},
-                           {'range': [75, 100], 'color': '#D32F2F'}
-                       ]}))
+                       'steps': [{'range': [0, 40], 'color': '#388E3C'}, {'range': [40, 75], 'color': '#FBC02D'}, {'range': [75, 100], 'color': '#D32F2F'}]}))
             fig.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            logger.error(f"Error in system pressure gauge: {e}", exc_info=True)
+            logger.error(f"Error in pressure gauge: {e}", exc_info=True)
             st.warning("Could not display System Pressure gauge.")
 
     def _plot_resource_to_risk_adequacy(self):
-        """Plots a bar chart comparing risk demand to resource supply for top zones."""
+        """Plots a bar chart comparing risk demand to resource supply."""
         try:
-            kpi_df = st.session_state.kpi_df
-            allocations = st.session_state.allocations
+            kpi_df, allocations = st.session_state.kpi_df, st.session_state.allocations
             if kpi_df.empty or 'Integrated_Risk_Score' not in kpi_df.columns:
-                st.info("No data for risk adequacy plot.")
-                return
-
-            top_zones_df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
-            top_zones_df['allocated_units'] = top_zones_df['Zone'].map(allocations).fillna(0)
-            
-            risk_coverage_per_unit = self.config.get('model_params', {}).get(
-                'risk_coverage_per_unit', CONSTANTS['RISK_COVERAGE_PER_UNIT']
-            )
-            top_zones_df['risk_covered'] = top_zones_df['allocated_units'] * risk_coverage_per_unit
-            top_zones_df['adequacy_ratio'] = np.clip(
-                (top_zones_df['risk_covered'] + 1e-9) / (top_zones_df['Integrated_Risk_Score'] + 1e-9), 0, 1.5
-            )
-
-            def get_color(ratio):
-                if ratio < 0.7: return '#D32F2F'  # Deficit
-                if ratio < 1.0: return '#FBC02D'  # Stretched
-                return '#388E3C'  # Adequate
-
-            top_zones_df['adequacy_color'] = top_zones_df['adequacy_ratio'].apply(get_color)
-
+                st.info("No data for risk adequacy plot."); return
+            df = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
+            df['allocated'] = df['Zone'].map(allocations).fillna(0)
+            risk_cov = self.config.get('model_params',{}).get('risk_coverage_per_unit', CONSTANTS['RISK_COVERAGE_PER_UNIT'])
+            df['risk_covered'] = df['allocated'] * risk_cov
+            df['ratio'] = np.clip((df['risk_covered'] + 1e-9) / (df['Integrated_Risk_Score'] + 1e-9), 0, 1.5)
+            df['color'] = df['ratio'].apply(lambda r: '#D32F2F' if r < 0.7 else '#FBC02D' if r < 1.0 else '#388E3C')
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                y=top_zones_df['Zone'], x=top_zones_df['Integrated_Risk_Score'],
-                orientation='h', name='Total Risk (Demand)', marker_color='#e0e0e0',
-                hovertemplate="<b>Zone:</b> %{y}<br><b>Total Risk:</b> %{x:.3f}<extra></extra>"
-            ))
-            fig.add_trace(go.Bar(
-                y=top_zones_df['Zone'], x=top_zones_df['risk_covered'],
-                orientation='h', name='Covered Risk (Supply)',
-                marker_color=top_zones_df['adequacy_color'],
-                text=top_zones_df['allocated_units'].astype(int).astype(str) + " Unit(s)",
-                textposition='inside', insidetextanchor='middle',
-                textfont=dict(color='white', size=12),
-                hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Covered:</b> %{x:.3f}<br><b>Allocated:</b> %{text}<extra></extra>"
-            ))
-
-            fig.update_layout(
-                title='Resource vs. Demand for High-Risk Zones',
-                xaxis_title='Integrated Risk Score', yaxis_title=None, height=350,
-                yaxis={'categoryorder': 'total ascending'},
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                barmode='overlay', plot_bgcolor='white', margin=dict(l=10, r=10, t=70, b=10)
-            )
+            fig.add_trace(go.Bar(y=df['Zone'], x=df['Integrated_Risk_Score'], orientation='h', name='Total Risk', marker_color='#e0e0e0', hovertemplate="<b>Zone:</b> %{y}<br><b>Total Risk:</b> %{x:.3f}<extra></extra>"))
+            fig.add_trace(go.Bar(y=df['Zone'], x=df['risk_covered'], orientation='h', name='Covered Risk', marker_color=df['color'], text=df['allocated'].astype(int).astype(str)+" Unit(s)", textposition='inside', textfont=dict(color='white', size=12), hovertemplate="<b>Zone:</b> %{y}<br><b>Risk Covered:</b> %{x:.3f}<br><b>Allocated:</b> %{text}<extra></extra>"))
+            fig.update_layout(title='Resource vs. Demand for High-Risk Zones', xaxis_title='Integrated Risk Score', yaxis_title=None, height=350, yaxis={'categoryorder':'total ascending'}, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), barmode='overlay', plot_bgcolor='white', margin=dict(l=10, r=10, t=70, b=10))
             st.plotly_chart(fig, use_container_width=True)
             st.markdown("**How to Read:** The grey bar is the risk (demand). The colored bar is the coverage from allocated units (supply).")
         except Exception as e:
-            logger.error(f"Error in resource adequacy plot: {e}", exc_info=True)
+            logger.error(f"Error in adequacy plot: {e}", exc_info=True)
             st.warning("Could not display Resource Adequacy plot.")
 
-
     # --- TAB 2: KPI DEEP DIVE ---
-    
     def _render_kpi_deep_dive_tab(self):
-        """Renders the tab for detailed KPI analysis and visualizations."""
         st.subheader("Comprehensive Risk Indicator Matrix")
-        kpi_df = st.session_state.kpi_df
-        
-        if not kpi_df.empty:
-            st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis'),
-                         use_container_width=True)
-        else:
-            st.info("KPI data not yet available.")
-        
+        if not (kpi_df := st.session_state.kpi_df).empty:
+            st.dataframe(kpi_df.set_index('Zone').style.format("{:.3f}").background_gradient(cmap='viridis'), use_container_width=True)
+        else: st.info("KPI data not yet available.")
         st.divider()
         st.subheader("Advanced Analytical Visualizations")
         if not kpi_df.empty:
-            tab1, tab2, tab3 = st.tabs(["📍 Zone Vulnerability Quadrant", "📊 Risk Contribution Drill-Down", "📈 Risk Forecast & Uncertainty"])
-            with tab1:
-                self._plot_vulnerability_quadrant(kpi_df)
-            with tab2:
-                self._plot_risk_contribution_sunburst(kpi_df)
-            with tab3:
-                self._plot_forecast_with_uncertainty()
-        else:
-            st.info("Advanced visualizations unavailable: Waiting for data...")
+            tab1, tab2, tab3 = st.tabs(["📍 Zone Vulnerability", "📊 Risk Drill-Down", "📈 Risk Forecast"])
+            with tab1: self._plot_vulnerability_quadrant(kpi_df)
+            with tab2: self._plot_risk_contribution_sunburst(kpi_df)
+            with tab3: self._plot_forecast_with_uncertainty()
+        else: st.info("Advanced visualizations unavailable: Waiting for data...")
 
     def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
-        """Plots a scatter chart segmenting zones by dynamic and structural risk."""
-        st.markdown("**Analysis:** This plot segments zones by their long-term structural vulnerability vs. their immediate dynamic risk.")
+        st.markdown("**Analysis:** Segments zones by long-term structural vulnerability vs. immediate dynamic risk.")
         try:
-            required_cols = ['Ensemble Risk Score', 'GNN_Structural_Risk', 'Integrated_Risk_Score', 'Expected Incident Volume']
-            if not all(col in kpi_df.columns for col in required_cols):
-                st.error("Data is missing required columns for the Vulnerability Quadrant plot.")
-                logger.warning(f"Vulnerability plot missing cols: {set(required_cols) - set(kpi_df.columns)}")
-                return
-            
-            x_mean = kpi_df['Ensemble Risk Score'].mean()
-            y_mean = kpi_df['GNN_Structural_Risk'].mean()
-            
-            fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk",
-                           color="Integrated_Risk_Score", size="Expected Incident Volume",
-                           hover_name="Zone", color_continuous_scale="reds", size_max=18,
-                           hover_data={'Zone': False, 
-                                       'Ensemble Risk Score': ':.3f', 
-                                       'GNN_Structural_Risk': ':.3f',
-                                       'Integrated_Risk_Score': ':.3f'})
-            
+            req = ['Ensemble Risk Score', 'GNN_Structural_Risk', 'Integrated_Risk_Score', 'Expected Incident Volume']
+            if not all(c in kpi_df.columns for c in req): st.error("Data missing for Vulnerability plot."); return
+            x_m, y_m = kpi_df['Ensemble Risk Score'].mean(), kpi_df['GNN_Structural_Risk'].mean()
+            fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score", size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18, hover_data={'Zone':False, 'Ensemble Risk Score':':.3f', 'GNN_Structural_Risk':':.3f'})
             fig.update_traces(hovertemplate="<b>Zone: %{hovertext}</b><br><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>")
-            fig.add_vline(x=x_mean, line_width=1, line_dash="dash", line_color="grey")
-            fig.add_hline(y=y_mean, line_width=1, line_dash="dash", line_color="grey")
-            
-            anno_defaults = {'showarrow': False, 'font': {'size': 12}}
-            fig.add_annotation(x=x_mean*1.5, y=y_mean*1.8, text="<b>Crisis Zones</b>", font={'color':"red"}, **anno_defaults)
-            fig.add_annotation(x=x_mean/2, y=y_mean*1.8, text="<b>Latent Threats</b>", font={'color':"navy"}, **anno_defaults)
-            fig.add_annotation(x=x_mean*1.5, y=y_mean/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange"}, **anno_defaults)
-            
-            fig.update_layout(xaxis_title="Dynamic Risk (Real-time Threat)",
-                              yaxis_title="Structural Vulnerability (Intrinsic Threat)",
-                              coloraxis_colorbar_title_text='Integrated<br>Risk')
+            fig.add_vline(x=x_m, line_width=1, line_dash="dash", line_color="grey"); fig.add_hline(y=y_m, line_width=1, line_dash="dash", line_color="grey")
+            anno = {'showarrow':False, 'font':{'size':12}}; fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red"}, **anno)
+            fig.add_annotation(x=x_m/2, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy"}, **anno); fig.add_annotation(x=x_m*1.5, y=y_m/2, text="<b>Acute Hotspots</b>", font={'color':"darkorange"}, **anno)
+            fig.update_layout(xaxis_title="Dynamic Risk", yaxis_title="Structural Vulnerability", coloraxis_colorbar_title_text='Integrated<br>Risk')
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            logger.error(f"Error in vulnerability quadrant plot: {e}", exc_info=True)
+            logger.error(f"Error in vulnerability quadrant: {e}", exc_info=True)
             st.warning("Could not display Vulnerability Quadrant plot.")
 
     def _plot_risk_contribution_sunburst(self, kpi_df: pd.DataFrame):
-        """Plots a sunburst chart to break down the Integrated Risk Score for a selected zone."""
-        st.markdown("**Analysis:** Select a high-risk zone to break down its `Integrated_Risk_Score` into its constituent model components.")
+        st.markdown("**Analysis:** Break down a zone's `Integrated_Risk_Score` into its model components.")
         try:
-            top_5_zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
-            if not top_5_zones:
-                st.info("No high-risk zones to analyze.")
-                return
-
-            selected_zone = st.selectbox("Select a High-Risk Zone to Analyze:", options=top_5_zones)
-            if not selected_zone: return
-            
-            zone_data = kpi_df.loc[kpi_df['Zone'] == selected_zone].iloc[0]
-            adv_weights = self.config.get('model_params', {}).get('advanced_model_weights', {})
-            
-            data = {
-                'ids': ['Integrated Risk', 'Base Ensemble', 'Advanced Models', 'STGP', 'HMM', 'GNN', 'Game Theory'],
-                'labels': [f"Total: {zone_data.get('Integrated_Risk_Score', 0):.2f}", 'Base Ensemble', 'Advanced Models',
-                           'STGP Risk', 'HMM State', 'GNN Structure', 'Game Tension'],
-                'parents': ['', 'Integrated Risk', 'Integrated Risk', 'Advanced Models', 'Advanced Models',
-                            'Advanced Models', 'Advanced Models'],
-                'values': [
-                    zone_data.get('Integrated_Risk_Score', 0),
-                    adv_weights.get('base_ensemble', 0) * zone_data.get('Ensemble Risk Score', 0),
-                    (adv_weights.get('stgp', 0) * zone_data.get('STGP_Risk', 0) +
-                     adv_weights.get('hmm', 0) * zone_data.get('HMM_State_Risk', 0) +
-                     adv_weights.get('gnn', 0) * zone_data.get('GNN_Structural_Risk', 0) +
-                     adv_weights.get('game_theory', 0) * zone_data.get('Game_Theory_Tension', 0)),
-                    adv_weights.get('stgp', 0) * zone_data.get('STGP_Risk', 0),
-                    adv_weights.get('hmm', 0) * zone_data.get('HMM_State_Risk', 0),
-                    adv_weights.get('gnn', 0) * zone_data.get('GNN_Structural_Risk', 0),
-                    adv_weights.get('game_theory', 0) * zone_data.get('Game_Theory_Tension', 0)
-                ]
-            }
-            fig = go.Figure(go.Sunburst(
-                ids=data['ids'], labels=data['labels'], parents=data['parents'],
-                values=data['values'], branchvalues="total",
-                hovertemplate='<b>%{label}</b><br>Contribution: %{value:.3f}<extra></extra>'
-            ))
-            fig.update_layout(
-                margin=dict(t=20, l=0, r=0, b=0),
-                title_text=f"Risk Breakdown for Zone: {selected_zone}", title_x=0.5, height=450
-            )
+            zones = kpi_df.nlargest(5, 'Integrated_Risk_Score')['Zone'].tolist()
+            if not zones: st.info("No high-risk zones to analyze."); return
+            zone = st.selectbox("Select a High-Risk Zone to Analyze:", options=zones)
+            if not zone: return
+            z_data, weights = kpi_df.loc[kpi_df['Zone']==zone].iloc[0], self.config.get('model_params',{}).get('advanced_model_weights',{})
+            data = {'ids':['IR','BE','AM','STGP','HMM','GNN','GT'], 'labels':[f"Total: {z_data.get('Integrated_Risk_Score',0):.2f}",'Base','Adv.','STGP','HMM','GNN','Game Theory'], 'parents':['','IR','IR','AM','AM','AM','AM'],
+                    'values':[z_data.get('Integrated_Risk_Score',0), weights.get('base_ensemble',0)*z_data.get('Ensemble Risk Score',0), (weights.get('stgp',0)*z_data.get('STGP_Risk',0)+weights.get('hmm',0)*z_data.get('HMM_State_Risk',0)+weights.get('gnn',0)*z_data.get('GNN_Structural_Risk',0)+weights.get('game_theory',0)*z_data.get('Game_Theory_Tension',0)), weights.get('stgp',0)*z_data.get('STGP_Risk',0), weights.get('hmm',0)*z_data.get('HMM_State_Risk',0), weights.get('gnn',0)*z_data.get('GNN_Structural_Risk',0), weights.get('game_theory',0)*z_data.get('Game_Theory_Tension',0)]}
+            fig = go.Figure(go.Sunburst(ids=data['ids'], labels=data['labels'], parents=data['parents'], values=data['values'], branchvalues="total", hovertemplate='<b>%{label}</b><br>Contribution: %{value:.3f}<extra></extra>'))
+            fig.update_layout(margin=dict(t=20,l=0,r=0,b=0), title_text=f"Risk Breakdown for Zone: {zone}", title_x=0.5, height=450)
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            logger.error(f"Error in risk contribution sunburst: {e}", exc_info=True)
+            logger.error(f"Error in sunburst plot: {e}", exc_info=True)
             st.warning("Could not display Risk Contribution plot.")
             
     def _plot_forecast_with_uncertainty(self):
-        """Plots a time-series forecast with confidence intervals for selected zones."""
-        st.markdown("**Analysis:** This chart projects the selected zone's risk over 72 hours. The shaded area represents the model's **95% confidence interval** — a wider band indicates greater uncertainty.")
+        st.markdown("**Analysis:** Projects risk over 72 hours. Shaded area is the 95% confidence interval.")
         try:
-            forecast_df = st.session_state.forecast_df
-            kpi_df = st.session_state.kpi_df
-            if forecast_df.empty or kpi_df.empty:
-                st.info("No forecast data to display.")
-                return
-
-            all_zones = sorted(forecast_df['Zone'].unique().tolist())
-            default_zones = kpi_df.nlargest(3, 'Integrated_Risk_Score')['Zone'].tolist()
-            selected_zones = st.multiselect("Select zones to visualize forecast:", options=all_zones, default=default_zones)
-
-            if not selected_zones:
-                st.info("Please select at least one zone to visualize the forecast.")
-                return
+            fc_df, kpi_df = st.session_state.forecast_df, st.session_state.kpi_df
+            if fc_df.empty or kpi_df.empty: st.info("No forecast data to display."); return
+            zones = sorted(fc_df['Zone'].unique().tolist())
+            defaults = kpi_df.nlargest(3, 'Integrated_Risk_Score')['Zone'].tolist()
+            selected = st.multiselect("Select zones for forecast:", options=zones, default=defaults)
+            if not selected: st.info("Please select at least one zone."); return
 
             fig = go.Figure()
             colors = px.colors.qualitative.Plotly
-            for i, zone in enumerate(selected_zones):
-                zone_df = forecast_df[forecast_df['Zone'] == zone]
+            for i, zone in enumerate(selected):
+                zone_df = fc_df[fc_df['Zone'] == zone]
                 if zone_df.empty: continue
-                
-                color_val = colors[i % len(colors)]
-                # Add uncertainty band
-                fig.add_trace(go.Scatter(
-                    x=np.concatenate([zone_df['Horizon (Hours)'], zone_df['Horizon (Hours)'][::-1]]),
-                    y=np.concatenate([zone_df['Upper_Bound'], zone_df['Lower_Bound'][::-1]]),
-                    fill='toself', fillcolor=f'rgba({",".join(str(c) for c in px.colors.hex_to_rgb(color_val))}, 0.2)',
-                    line=dict(color='rgba(255,255,255,0)'), hoverinfo="skip", showlegend=False
-                ))
-                # Add forecast line
-                fig.add_trace(go.Scatter(
-                    x=zone_df['Horizon (Hours)'], y=zone_df['Combined Risk'], name=zone,
-                    line=dict(color=color_val, width=2), mode='lines+markers'
-                ))
-            fig.update_layout(
-                title='72-Hour Risk Forecast with 95% Confidence Interval',
-                xaxis_title='Horizon (Hours)', yaxis_title='Projected Integrated Risk Score',
-                legend_title_text='Zone', hovermode="x unified"
-            )
+                color, rgb = colors[i % len(colors)], px.colors.hex_to_rgb(colors[i % len(colors)])
+                fig.add_trace(go.Scatter(x=np.concatenate([zone_df['Horizon (Hours)'], zone_df['Horizon (Hours)'][::-1]]), y=np.concatenate([zone_df['Upper_Bound'], zone_df['Lower_Bound'][::-1]]), fill='toself', fillcolor=f'rgba({",".join(map(str,rgb))}, 0.2)', line={'color':'rgba(255,255,255,0)'}, hoverinfo="skip", showlegend=False))
+                fig.add_trace(go.Scatter(x=zone_df['Horizon (Hours)'], y=zone_df['Combined Risk'], name=zone, line=dict(color=color, width=2), mode='lines+markers'))
+            fig.update_layout(title='72-Hour Risk Forecast with 95% Confidence Interval', xaxis_title='Horizon (Hours)', yaxis_title='Projected Integrated Risk Score', legend_title_text='Zone', hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             logger.error(f"Error in forecast plot: {e}", exc_info=True)
             st.warning("Could not display forecast plot.")
 
-
-    # --- TAB 3: METHODOLOGY ---
-
+    # --- metodologia, etc. ---
     def _render_methodology_tab(self):
-        """Renders the detailed methodology and model explanation tab."""
         st.header("System Architecture & Methodology")
         st.markdown("This section provides a deep dive into the analytical engine powering the Phoenix v4.0 platform. It is designed for data scientists, analysts, and command staff who wish to understand the 'why' behind the system's predictions and prescriptions.")
-        
         self._render_architecture_philosophy()
         self._render_prediction_engine()
         self._render_prescription_engine()
@@ -610,7 +398,7 @@ class Dashboard:
             3. **LAYER 3: Integrated Synthesis (Prediction).** The outputs of the first two layers are combined in a final, weighted synthesis to produce the ultimate `Integrated_Risk_Score`. This score represents the system's best **prediction** of risk.
             4. **LAYER 4: Prescriptive Optimization (Prescription).** The `Integrated_Risk_Score` and `Expected Incident Volume` are fed into an Operations Research (OR) engine. This layer moves beyond prediction to **prescription**, determining the *optimal* real-world action to take (e.g., ambulance allocation) to best mitigate the predicted risk.
             """)
-    
+
     def _render_prediction_engine(self):
         with st.expander("II. The Prediction Engine: A Multi-Model Deep Dive", expanded=False):
             st.info("#### Core Principle: Different questions require different tools. No single model can capture all facets of urban risk.", icon="💡")
@@ -847,12 +635,9 @@ class Dashboard:
             }
             for kpi, definition in kpi_defs.items():
                 c1, c2 = st.columns([1, 2])
-                with c1:
-                    st.markdown(f"**{kpi}**")
-                with c2:
-                    st.markdown(definition)
+                with c1: st.markdown(f"**{kpi}**")
+                with c2: st.markdown(definition)
                 st.markdown("---", unsafe_allow_html=True)
-
 
     # --- SIDEBAR AND ACTIONS ---
 
@@ -860,16 +645,11 @@ class Dashboard:
         """Renders the sidebar for user controls and actions."""
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
-        
-        # Build a new EnvFactors object from sidebar controls
         new_env = self._build_env_factors_from_sidebar()
-        
-        # Optimized: Only rerun if the environment factors have changed significantly
         if new_env != st.session_state.env_factors:
             logger.info("EnvFactors updated, triggering rerun.")
             st.session_state.env_factors = new_env
             st.rerun()
-
         st.sidebar.divider()
         st.sidebar.header("Data & Reporting")
         self._sidebar_file_uploader()
@@ -884,71 +664,57 @@ class Dashboard:
             weather = st.selectbox("Weather", ["Clear", "Rain", "Fog"], index=["Clear", "Rain", "Fog"].index(env.weather))
             aqi = st.slider("Air Quality Index (AQI)", 0.0, 500.0, env.air_quality_index, 5.0)
             heatwave = st.checkbox("Heatwave Alert", value=env.heatwave_alert)
-
         with st.sidebar.expander("Contextual & Event-Based Factors", expanded=True):
             day_type = st.selectbox("Day Type", ['Weekday', 'Friday', 'Weekend'], index=['Weekday', 'Friday', 'Weekend'].index(env.day_type))
             time_of_day = st.selectbox("Time of Day", ['Morning Rush', 'Midday', 'Evening Rush', 'Night'], index=['Morning Rush', 'Midday', 'Evening Rush', 'Night'].index(env.time_of_day))
-            public_event_type = st.selectbox("Public Event Type", ['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'], index=['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'].index(env.public_event_type))
+            public_event = st.selectbox("Public Event Type", ['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'], index=['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'].index(env.public_event_type))
             school_in_session = st.checkbox("School In Session", value=env.school_in_session)
-
         with st.sidebar.expander("System Strain & Response Factors", expanded=True):
-            traffic = st.slider("General Traffic Level", CONSTANTS['TRAFFIC_MIN'], CONSTANTS['TRAFFIC_MAX'], env.traffic_level, 0.1, help="A general multiplier for traffic congestion.")
-            hospital_divert = st.slider("Hospital Divert Status (%)", 0, 100, int(env.hospital_divert_status * 100), 5)
+            traffic = st.slider("General Traffic Level", CONSTANTS['TRAFFIC_MIN'], CONSTANTS['TRAFFIC_MAX'], env.traffic_level, 0.1)
+            h_divert = st.slider("Hospital Divert Status (%)", 0, 100, int(env.hospital_divert_status * 100), 5)
             police_activity = st.selectbox("Police Activity Level", ['Low', 'Normal', 'High'], index=['Low', 'Normal', 'High'].index(env.police_activity))
-
         return EnvFactorsWithTolerance(
-            is_holiday=is_holiday, weather=weather, traffic_level=traffic,
-            major_event=(public_event_type != 'None'), population_density=env.population_density,
-            air_quality_index=aqi, heatwave_alert=heatwave, day_type=day_type,
-            time_of_day=time_of_day, public_event_type=public_event_type,
-            hospital_divert_status=hospital_divert / 100.0,
-            police_activity=police_activity, school_in_session=school_in_session
+            is_holiday=is_holiday, weather=weather, traffic_level=traffic, major_event=(public_event != 'None'),
+            population_density=env.population_density, air_quality_index=aqi, heatwave_alert=heatwave,
+            day_type=day_type, time_of_day=time_of_day, public_event_type=public_event,
+            hospital_divert_status=h_divert / 100.0, police_activity=police_activity, school_in_session=school_in_session
         )
 
     def _sidebar_file_uploader(self):
-        """Handles the logic for the historical data file uploader."""
-        uploaded_file = st.sidebar.file_uploader("Upload Historical Incidents (JSON)", type=["json"])
-        if uploaded_file is not None:
+        """Handles logic for the historical data file uploader."""
+        up_file = st.sidebar.file_uploader("Upload Historical Incidents (JSON)", type=["json"])
+        if up_file:
             try:
-                data = json.load(uploaded_file)
-                # Optimized: Basic validation of JSON structure
+                data = json.load(up_file)
                 if not isinstance(data, list) or not all('location' in d and 'type' in d for d in data):
-                    raise ValueError("Invalid JSON: Must be a list of incident objects with 'location' and 'type'.")
+                    raise ValueError("Invalid JSON: Must be a list of incident objects.")
                 st.session_state.historical_data = data
                 st.sidebar.success(f"Loaded {len(data)} historical records.")
-                st.rerun() # Rerun to apply the new data
+                st.rerun()
             except (json.JSONDecodeError, ValueError) as e:
                 logger.error(f"Error loading uploaded data: {e}", exc_info=True)
                 st.sidebar.error(f"Error parsing file: {e}")
             except Exception as e:
-                logger.error(f"An unexpected error occurred during file upload: {e}", exc_info=True)
+                logger.error(f"Unexpected error during file upload: {e}", exc_info=True)
                 st.sidebar.error("An unexpected error occurred.")
-
 
     def _generate_report(self):
         """Generates and provides a download link for the PDF report."""
         with st.spinner("Generating Report..."):
             try:
                 pdf_buffer = ReportGenerator.generate_pdf_report(
-                    kpi_df=st.session_state.kpi_df,
-                    forecast_df=st.session_state.forecast_df,
-                    allocations=st.session_state.allocations,
-                    env_factors=st.session_state.env_factors
+                    kpi_df=st.session_state.kpi_df, forecast_df=st.session_state.forecast_df,
+                    allocations=st.session_state.allocations, env_factors=st.session_state.env_factors
                 )
                 if pdf_buffer.getbuffer().nbytes > 0:
                     st.sidebar.download_button(
-                        label="Download PDF Report",
-                        data=pdf_buffer,
+                        label="Download PDF Report", data=pdf_buffer,
                         file_name=f"RedShield_Phoenix_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                else:
-                    raise ValueError("Generated PDF buffer is empty.")
+                        mime="application/pdf", use_container_width=True)
+                else: raise ValueError("Generated PDF buffer is empty.")
             except Exception as e:
                 logger.error(f"Report generation failed: {e}", exc_info=True)
                 st.sidebar.error(f"Report generation failed: {e}")
-
 
 def main():
     """Main function to initialize and run the application."""
@@ -961,7 +727,6 @@ def main():
     except Exception as e:
         logger.critical(f"A fatal error occurred during application startup: {e}", exc_info=True)
         st.error(f"A fatal application error occurred: {e}. Please check logs and configuration file.")
-
 
 if __name__ == "__main__":
     main()
