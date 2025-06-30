@@ -242,15 +242,24 @@ class DataManager:
                     logger.warning(f"Skipping incident {inc.get('id', 'N/A')} due to invalid location data.")
         return valid_incidents
 
-    def _generate_synthetic_incidents(self, env_factors: EnvFactors) -> List[Dict[str, Any]]:
-        """Generates realistic synthetic incidents based on environmental factors."""
-        base_intensity = 5.0
-        intensity = base_intensity * \
-            (1.5 if env_factors.is_holiday else 1.0) * \
-            (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * \
-            (2.0 if env_factors.major_event else 1.0)
+# In core.py, inside the DataManager class:
 
-        num_incidents = int(np.random.poisson(intensity))
+    def _generate_synthetic_incidents(self, env_factors: EnvFactors, override_count: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Generates realistic synthetic incidents based on environmental factors."""
+        if override_count is not None:
+            # If an override count is provided, use it directly.
+            num_incidents = override_count
+            logger.info(f"Generating {num_incidents} synthetic incidents based on user override.")
+        else:
+            # Otherwise, calculate the number of incidents based on environmental factors.
+            base_intensity = 5.0
+            intensity = base_intensity * \
+                (1.5 if env_factors.is_holiday else 1.0) * \
+                (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * \
+                (2.0 if env_factors.major_event else 1.0)
+            num_incidents = int(np.random.poisson(intensity))
+            logger.info(f"Generating {num_incidents} synthetic incidents based on environmental factors.")
+        
         if num_incidents == 0:
             return []
 
@@ -258,7 +267,9 @@ class DataManager:
         bounds = city_boundary.bounds
         incidents = []
         incident_types = list(self.data_config['distributions']['incident_type'].keys())
-        num_to_generate = int(num_incidents * 1.5)
+
+        # Optimized: Generate points in a vectorized manner and filter
+        num_to_generate = int(num_incidents * 1.5) # Generate more to account for those outside boundary
         lons = np.random.uniform(bounds[0], bounds[2], num_to_generate)
         lats = np.random.uniform(bounds[1], bounds[3], num_to_generate)
         points = gpd.GeoSeries([Point(lon, lat) for lon, lat in zip(lons, lats)])
@@ -272,7 +283,7 @@ class DataManager:
                 'location': {'lat': point.y, 'lon': point.x},
                 'timestamp': datetime.utcnow().isoformat()
             })
-        logger.info(f"Generated {len(incidents)} synthetic incidents.")
+        
         return incidents
 
     def generate_sample_history_file(self) -> io.BytesIO:
