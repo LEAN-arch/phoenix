@@ -1192,68 +1192,113 @@ class Dashboard:
                 st.markdown("---")
 
     # --- SIDEBAR AND ACTIONS ---
+# In main.py, inside the Dashboard class:
+
     def _render_sidebar(self):
+        """Renders the sidebar for user controls and actions."""
         st.sidebar.title("Strategic Controls")
         st.sidebar.markdown("Adjust real-time factors to simulate different scenarios.")
+        
+        # This calls a separate method to build the EnvFactors object
         new_env = self._build_env_factors_from_sidebar()
+        
+        # This part remains unchanged
         if new_env != st.session_state.env_factors:
             logger.info("EnvFactors updated, triggering rerun.")
             st.session_state.env_factors = new_env
             st.rerun()
-#####NEW SNIPPET TO CONTROL INCIDENTS 
-# In main.py, inside the Dashboard class:
-        # --- THIS IS WHERE YOU ADD THE NEW SNIPPET ---
-        # --- SME Addition: Scenario Simulation Controls ---
+
+        # --- Scenario Simulation Controls ---
         with st.sidebar.expander("Scenario Simulation", expanded=True):
             st.markdown("Manually adjust system load and resource levels to test 'what-if' scenarios.")
             
-            # --- Control for Number of Incidents ---
-            # We get the current number of incidents to set as the default
+            # Control for Number of Incidents
             current_incident_count = len(st.session_state.get('current_incidents', []))
-            
             new_incident_count = st.number_input(
                 "Set Number of Active Incidents",
                 min_value=0,
                 value=current_incident_count,
                 step=1,
+                key="incident_simulator", # Added key for robustness
                 help="Override the live data feed to simulate a different number of active incidents across the city."
             )
 
-            # If the user changes the number, we generate a new set of synthetic incidents
             if new_incident_count != current_incident_count:
-                # Use the modified method in DataManager to generate a specific number of incidents
                 st.session_state.current_incidents = self.dm._generate_synthetic_incidents(
                     st.session_state.env_factors, override_count=new_incident_count
                 )
                 logger.info(f"User simulated new scenario with {new_incident_count} incidents.")
                 st.rerun()
 
-            # --- Control for Number of Ambulances ---
-            # Get the total number of ambulances in the fleet
+            # Control for Number of Ambulances
             total_ambulances = len(self.dm.ambulances)
-            
+            current_available_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
             new_ambulance_count = st.number_input(
                 "Set Number of Available Ambulances",
                 min_value=0,
-                max_value=total_ambulances, # Cannot have more available than total
-                value=sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible'),
+                max_value=total_ambulances,
+                value=current_available_ambulances,
                 step=1,
+                key="ambulance_simulator", # Added key for robustness
                 help=f"Adjust the number of available units from the total fleet of {total_ambulances}."
             )
 
-            # If the user changes the number, we update the status of the ambulances in the DataManager
-            current_available_ambulances = sum(1 for a in self.dm.ambulances.values() if a['status'] == 'Disponible')
             if new_ambulance_count != current_available_ambulances:
-                # This is a simplified logic. A real system might have more complex state management.
-                # We'll make the first 'n' ambulances available and the rest 'En Misión'.
                 for i, amb_id in enumerate(self.dm.ambulances.keys()):
-                    if i < new_ambulance_count:
-                        self.dm.ambulances[amb_id]['status'] = 'Disponible'
-                    else:
-                        self.dm.ambulances[amb_id]['status'] = 'En Misión'
+                    self.dm.ambulances[amb_id]['status'] = 'Disponible' if i < new_ambulance_count else 'En Misión'
                 logger.info(f"User simulated new scenario with {new_ambulance_count} available ambulances.")
                 st.rerun()
-        # --- END OF THE NEW SNIPPET ---
+
+        # --- Data & Reporting Section ---
+        st.sidebar.divider()
+        st.sidebar.header("Data & Reporting")
+        self._sidebar_file_uploader() # Call the single method
+        if st.sidebar.button("Generate & Download PDF Report", use_container_width=True):
+            self._generate_report()
+
+    def _build_env_factors_from_sidebar(self) -> EnvFactorsWithTolerance:
+        """Builds an EnvFactors object from the current state of sidebar widgets."""
+        env = st.session_state.env_factors
+        with st.sidebar.expander("General Environmental Factors", expanded=True):
+            is_holiday = st.checkbox("Is Holiday", value=env.is_holiday)
+            weather = st.selectbox("Weather", ["Clear", "Rain", "Fog"], index=["Clear", "Rain", "Fog"].index(env.weather))
+            aqi = st.slider("Air Quality Index (AQI)", 0.0, 500.0, env.air_quality_index, 5.0)
+            heatwave = st.checkbox("Heatwave Alert", value=env.heatwave_alert)
+        with st.sidebar.expander("Contextual & Event-Based Factors", expanded=True):
+            day_type = st.selectbox("Day Type", ['Weekday', 'Friday', 'Weekend'], index=['Weekday', 'Friday', 'Weekend'].index(env.day_type))
+            time_of_day = st.selectbox("Time of Day", ['Morning Rush', 'Midday', 'Evening Rush', 'Night'], index=['Morning Rush', 'Midday', 'Evening Rush', 'Night'].index(env.time_of_day))
+            public_event = st.selectbox("Public Event Type", ['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'], index=['None', 'Sporting Event', 'Concert/Festival', 'Public Protest'].index(env.public_event_type))
+            school_in_session = st.checkbox("School In Session", value=env.school_in_session)
+        with st.sidebar.expander("System Strain & Response Factors", expanded=True):
+            traffic = st.slider("General Traffic Level", CONSTANTS['TRAFFIC_MIN'], CONSTANTS['TRAFFIC_MAX'], env.traffic_level, 0.1)
+            h_divert = st.slider("Hospital Divert Status (%)", 0, 100, int(env.hospital_divert_status * 100), 5)
+            police_activity = st.selectbox("Police Activity Level", ['Low', 'Normal', 'High'], index=['Low', 'Normal', 'High'].index(env.police_activity))
+        return EnvFactorsWithTolerance(
+            is_holiday=is_holiday, weather=weather, traffic_level=traffic, major_event=(public_event != 'None'),
+            population_density=env.population_density, air_quality_index=aqi, heatwave_alert=heatwave,
+            day_type=day_type, time_of_day=time_of_day, public_event_type=public_event,
+            hospital_divert_status=h_divert / 100.0, police_activity=police_activity, school_in_session=school_in_session
+        )
+
+    def _sidebar_file_uploader(self):
+        """Handles logic for the historical data file uploader."""
+        # --- CORRECTED: Added a unique, explicit key ---
+        up_file = st.sidebar.file_uploader(
+            "Upload Historical Incidents (JSON)",
+            type=["json"],
+            key="history_uploader"
+        )
+        if up_file:
+            try:
+                data = json.load(up_file)
+                if not isinstance(data, list) or not all('location' in d and 'type' in d for d in data):
+                    raise ValueError("Invalid JSON: Must be a list of incident objects.")
+                st.session_state.historical_data = data
+                st.sidebar.success(f"Loaded {len(data)} historical records.")
+                st.rerun()
+            except Exception as e:
+                logger.error(f"Error loading uploaded data: {e}", exc_info=True)
+                st.sidebar.error(f"Error loading data: {e}")
 
         # This part remains unchanged
         st.sidebar.divider()
