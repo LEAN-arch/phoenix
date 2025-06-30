@@ -68,6 +68,7 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 
 
 # --- L1: DATA STRUCTURES ---
+
 @dataclass(frozen=True)
 class EnvFactors:
     """
@@ -90,6 +91,7 @@ class EnvFactors:
 
 
 # --- L2: DEEP LEARNING MODEL (CONDITIONAL) ---
+
 class TCNN(nn.Module if TORCH_AVAILABLE else object):
     """
     Temporal Convolutional Neural Network for advanced forecasting.
@@ -97,23 +99,39 @@ class TCNN(nn.Module if TORCH_AVAILABLE else object):
     """
     def __init__(self, input_size: int, output_size: int, channels: List[int], kernel_size: int, dropout: float):
         if not TORCH_AVAILABLE:
-            self.model = None; self.output_size = output_size
+            self.model = None
+            self.output_size = output_size
             return
-        super().__init__(); layers = []; in_channels = input_size
+        super().__init__()
+        layers: List[Any] = []
+        in_channels = input_size
         for out_channels in channels:
-            layers.extend([nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'), nn.ReLU(), nn.Dropout(dropout)]); in_channels = out_channels
-        layers.extend([nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Linear(in_channels, output_size)])
-        self.model = nn.Sequential(*layers); self.output_size = output_size
+            layers.extend([
+                nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ])
+            in_channels = out_channels
+        layers.extend([
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, output_size)
+        ])
+        self.model = nn.Sequential(*layers)
+        self.output_size = output_size
 
     def forward(self, x: "torch.Tensor") -> "torch.Tensor":
         """Forward pass for the TCNN model."""
-        if not TORCH_AVAILABLE or self.model is None: return torch.zeros(x.shape[0], self.output_size)
+        if not TORCH_AVAILABLE or self.model is None:
+            return torch.zeros(x.shape[0], self.output_size)
         return self.model(x)
 
 
 # --- L3: CORE LOGIC CLASSES ---
+
 class DataManager:
     """Manages all data loading, validation, and preparation."""
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.data_config = config['data']
@@ -128,7 +146,10 @@ class DataManager:
         G = nx.Graph()
         G.add_nodes_from(self.zones)
         edges = self.data_config.get('road_network', {}).get('edges', [])
-        valid_edges = [(u, v, float(w)) for u, v, w in edges if u in G.nodes and v in G.nodes and isinstance(w, (int, float)) and w > 0]
+        valid_edges = [
+            (u, v, float(w)) for u, v, w in edges
+            if u in G.nodes and v in G.nodes and isinstance(w, (int, float)) and w > 0
+        ]
         G.add_weighted_edges_from(valid_edges)
         logger.info(f"Road graph built with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
         return G
@@ -139,21 +160,33 @@ class DataManager:
         for name, data in self.data_config['zones'].items():
             try:
                 poly = Polygon([(lon, lat) for lat, lon in data['polygon']])
-                if not poly.is_valid: poly = poly.buffer(0)
-                if poly.is_empty: raise ValueError(f"Polygon for zone '{name}' is invalid or empty.")
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly.is_empty:
+                    raise ValueError(f"Polygon for zone '{name}' is invalid or empty after buffering.")
                 zone_data.append({'name': name, 'geometry': poly, **data})
             except Exception as e:
                 logger.error(f"Could not load polygon for zone '{name}': {e}. Skipping.", exc_info=True)
-        if not zone_data: raise RuntimeError("Fatal: No valid zones could be loaded from configuration.")
-        return gpd.GeoDataFrame(zone_data, crs="EPSG:4326").set_index('name')
+
+        if not zone_data:
+            raise RuntimeError("Fatal: No valid zones could be loaded from configuration.")
+
+        gdf = gpd.GeoDataFrame(zone_data, crs="EPSG:4326").set_index('name')
+        logger.info(f"Built GeoDataFrame with {len(gdf)} zones.")
+        return gdf
 
     def _initialize_ambulances(self) -> Dict[str, Any]:
-        """Initializes ambulance data from configuration."""
+        """Initializes ambulance data from configuration with robust error handling."""
         ambulances = {}
         for amb_id, data in self.data_config['ambulances'].items():
             try:
-                ambulances[amb_id] = {'id': amb_id, 'status': data.get('status', 'Disponible'), 'home_base': data.get('home_base'), 'location': Point(float(data['location'][1]), float(data['location'][0]))}
-            except (ValueError, TypeError, KeyError) as e:
+                ambulances[amb_id] = {
+                    'id': amb_id,
+                    'status': data.get('status', 'Disponible'),
+                    'home_base': data.get('home_base'),
+                    'location': Point(float(data['location'][1]), float(data['location'][0]))
+                }
+            except (ValueError, TypeError, KeyError, IndexError) as e:
                 logger.error(f"Could not initialize ambulance '{amb_id}': {e}. Skipping.", exc_info=True)
         logger.info(f"Initialized {len(ambulances)} ambulances.")
         return ambulances
@@ -170,29 +203,40 @@ class DataManager:
             return np.eye(len(self.zones))
 
     def get_current_incidents(self, env_factors: EnvFactors) -> List[Dict[str, Any]]:
-        """Fetches real-time incidents from an API or local file."""
+        """
+        Fetches real-time incidents from an API or local file.
+        Falls back to generating synthetic data on failure.
+        """
         api_config = self.data_config.get('real_time_api', {})
         endpoint = api_config.get('endpoint', '')
         try:
             if endpoint.startswith(('http://', 'https://')):
                 headers = {"Authorization": f"Bearer {api_config.get('api_key')}"} if api_config.get('api_key') else {}
-                response = requests.get(endpoint, headers=headers, timeout=10); response.raise_for_status()
+                response = requests.get(endpoint, headers=headers, timeout=10)
+                response.raise_for_status()
                 incidents = response.json().get('incidents', [])
             else:
-                with open(endpoint, 'r', encoding='utf-8') as f: incidents = json.load(f).get('incidents', [])
+                with open(endpoint, 'r', encoding='utf-8') as f:
+                    incidents = json.load(f).get('incidents', [])
+
             valid_incidents = self._validate_incidents(incidents)
             return valid_incidents if valid_incidents else self._generate_synthetic_incidents(env_factors)
-        except Exception as e:
+        except (requests.exceptions.RequestException, FileNotFoundError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to get real-time incidents from '{endpoint}': {e}. Falling back to synthetic data.")
             return self._generate_synthetic_incidents(env_factors)
-    
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching incidents: {e}", exc_info=True)
+            return self._generate_synthetic_incidents(env_factors)
+
     def _validate_incidents(self, incidents: List[Dict]) -> List[Dict]:
         """Validates the structure and data types of raw incident data."""
         valid_incidents = []
         for inc in incidents:
-            if all(k in inc for k in ['id','type','triage']) and isinstance(loc := inc.get('location'), dict) and all(k in loc for k in ['lat','lon']):
+            loc = inc.get('location')
+            if all(k in inc for k in ['id', 'type', 'triage']) and isinstance(loc, dict) and 'lat' in loc and 'lon' in loc:
                 try:
-                    inc['location']['lat'] = float(loc['lat']); inc['location']['lon'] = float(loc['lon'])
+                    inc['location']['lat'] = float(loc['lat'])
+                    inc['location']['lon'] = float(loc['lon'])
                     valid_incidents.append(inc)
                 except (ValueError, TypeError):
                     logger.warning(f"Skipping incident {inc.get('id', 'N/A')} due to invalid location data.")
@@ -200,38 +244,57 @@ class DataManager:
 
     def _generate_synthetic_incidents(self, env_factors: EnvFactors) -> List[Dict[str, Any]]:
         """Generates realistic synthetic incidents based on environmental factors."""
-        intensity = 5.0 * (1.5 if env_factors.is_holiday else 1.0) * (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * (2.0 if env_factors.major_event else 1.0)
+        base_intensity = 5.0
+        intensity = base_intensity * \
+            (1.5 if env_factors.is_holiday else 1.0) * \
+            (1.2 if env_factors.weather in ['Rain', 'Fog'] else 1.0) * \
+            (2.0 if env_factors.major_event else 1.0)
+
         num_incidents = int(np.random.poisson(intensity))
-        if num_incidents == 0: return []
-        city_boundary, bounds = self.zones_gdf.union_all(), self.zones_gdf.total_bounds
+        if num_incidents == 0:
+            return []
+
+        city_boundary = self.zones_gdf.union_all()
+        bounds = city_boundary.bounds
         incidents = []
+        incident_types = list(self.data_config['distributions']['incident_type'].keys())
         num_to_generate = int(num_incidents * 1.5)
         lons = np.random.uniform(bounds[0], bounds[2], num_to_generate)
         lats = np.random.uniform(bounds[1], bounds[3], num_to_generate)
         points = gpd.GeoSeries([Point(lon, lat) for lon, lat in zip(lons, lats)])
-        valid_points = points[points.within(city_boundary)].head(num_incidents)
-        for i, point in enumerate(valid_points):
-            incidents.append({'id': f"SYN-{i}", 'type': np.random.choice(list(self.data_config['distributions']['incident_type'].keys())), 'triage': 'Red', 'location': {'lat': point.y, 'lon': point.x}, 'timestamp': datetime.utcnow().isoformat()})
+        valid_points = points[points.within(city_boundary)]
+
+        for i, point in enumerate(valid_points.head(num_incidents)):
+            incidents.append({
+                'id': f"SYN-{i}",
+                'type': np.random.choice(incident_types),
+                'triage': 'Red',
+                'location': {'lat': point.y, 'lon': point.x},
+                'timestamp': datetime.utcnow().isoformat()
+            })
         logger.info(f"Generated {len(incidents)} synthetic incidents.")
         return incidents
-    
+
     def generate_sample_history_file(self) -> io.BytesIO:
         """Generates a sample historical data file for user download."""
         default_env = EnvFactors(is_holiday=False, weather="Clear", traffic_level=1.0, major_event=False, population_density=50000, air_quality_index=50.0, heatwave_alert=False, day_type='Weekday', time_of_day='Midday', public_event_type='None', hospital_divert_status=0.0, police_activity='Normal', school_in_session=True)
+        sample_data = [{'incidents': self._generate_synthetic_incidents(default_env), 'timestamp': (datetime.utcnow() - timedelta(hours=i*24)).isoformat()} for i in range(3)]
         buffer = io.BytesIO()
-        buffer.write(json.dumps([{'incidents': self._generate_synthetic_incidents(default_env), 'timestamp': (datetime.utcnow() - timedelta(hours=i*24)).isoformat()} for i in range(3)], indent=2).encode('utf-8'))
+        buffer.write(json.dumps(sample_data, indent=2).encode('utf-8'))
         buffer.seek(0)
         return buffer
 
+
 class PredictiveAnalyticsEngine:
     """Orchestrates foundational and advanced analytics to produce risk scores."""
+
     def __init__(self, dm: DataManager, config: Dict[str, Any]):
         self.dm = dm
         self.config = config
         self.model_params = config['model_params']
+        self.forecast_df = pd.DataFrame()
         self.bn_model = self._build_bayesian_network()
         self.tcnn_model = TCNN(**config['tcnn_params']) if TORCH_AVAILABLE else None
-        self.forecast_df = pd.DataFrame()
         weights_config = self.model_params.get('ensemble_weights', {})
         total_weight = sum(weights_config.values())
         self.method_weights = {k: v / total_weight for k, v in weights_config.items()} if total_weight > 0 else {}
@@ -246,19 +309,13 @@ class PredictiveAnalyticsEngine:
             model = BayesianNetwork(bn_config['structure'])
             for node, params in bn_config['cpds'].items():
                 model.add_cpds(TabularCPD(variable=node, variable_card=params['card'], values=params['values'], evidence=params.get('evidence'), evidence_card=params.get('evidence_card')))
-            model.check_model()
-            logger.info("Bayesian network initialized.")
-            return model
+            model.check_model(); logger.info("Bayesian network initialized."); return model
         except Exception as e:
-            logger.warning(f"Failed to initialize Bayesian network: {e}. Disabling.", exc_info=True)
-            return None
+            logger.warning(f"Failed to initialize Bayesian network: {e}. Disabling.", exc_info=True); return None
 
     @st.cache_data
     def generate_kpis(_self, historical_data: List[Dict], env_factors: EnvFactors, current_incidents: List[Dict]) -> pd.DataFrame:
-        """
-        Master method to generate all Key Performance Indicators (KPIs).
-        This function is cached for performance.
-        """
+        """Master method to generate all Key Performance Indicators (KPIs)."""
         kpi_cols = [
             'Incident Probability', 'Expected Incident Volume', 'Risk Entropy', 'Anomaly Score', 
             'Spatial Spillover Risk', 'Resource Adequacy Index', 'Chaos Sensitivity Score', 
@@ -276,12 +333,13 @@ class PredictiveAnalyticsEngine:
         incident_df = pd.DataFrame(all_incidents).drop_duplicates(subset=['id'], keep='first')
         incident_gdf = gpd.GeoDataFrame(incident_df, geometry=[Point(loc['lon'], loc['lat']) for loc in incident_df['location']], crs="EPSG:4326")
         
-        # --- CORRECTED: Renames the correct column ('index_right') created by sjoin ---
-        incidents_with_zones = gpd.sjoin(incident_gdf, _self.dm.zones_gdf, how="inner", predicate="within").rename(columns={'index_right': 'Zone'})
+        # --- CORRECTED: This is the robust way to perform the spatial join and get the zone name ---
+        zones_for_join = _self.dm.zones_gdf.reset_index()
+        incidents_with_zones = gpd.sjoin(incident_gdf, zones_for_join, how="inner", predicate="within").rename(columns={'name': 'Zone'})
 
         if incidents_with_zones.empty: return kpi_df.reset_index().rename(columns={'index': 'Zone'})
 
-        # --- The rest of the KPI logic is preserved as it was ---
+        # --- The rest of the function logic is preserved as it was ---
         incident_counts = incidents_with_zones['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
         violence_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Violence']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
         accident_counts = incidents_with_zones[incidents_with_zones['type'] == 'Trauma-Accident']['Zone'].value_counts().reindex(_self.dm.zones, fill_value=0)
