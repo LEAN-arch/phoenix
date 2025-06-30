@@ -1118,19 +1118,78 @@ class Dashboard:
             """)
 
     def _render_kpi_glossary(self):
+        """
+        [SME VISUALIZATION] Renders a comprehensive and structured glossary for all Key Performance Indicators.
+        """
         with st.expander("V. Key Performance Indicator (KPI) Glossary", expanded=False):
             kpi_defs = {
-                "Integrated Risk Score": """**The final, primary risk metric** used for all decisions.""",
-                "Ensemble Risk Score": """Blended risk score from foundational statistical models. Provides a stable baseline.""",
-                "GNN Structural Risk": """A zone's intrinsic vulnerability due to its position in the road and social network.""",
-                "STGP Risk": """Risk from proximity to recent, severe incidents (spatiotemporal correlation).""",
-                "Game Theory Tension": """A measure of a zone's contribution to system-wide resource competition.""",
-                "Chaos Sensitivity Score": """Measures system volatility and fragility. High score = 'The system is unstable.'""",
-                "Anomaly Score": """Measures the 'strangeness' of the current incident pattern compared to history.""",
-                "Resource Adequacy Index": """System-wide ratio of available units to expected demand, penalized by system strain."""
+                "Integrated Risk Score": {
+                    "description": "The final, synthesized risk metric used for all operational decisions. It is the single source of truth for prioritizing zones and allocating resources.",
+                    "question": "Which zone needs my attention the most right now, all factors considered?",
+                    "relevance": "Drives the final resource allocation recommendations and provides the primary ranking of zones by overall threat level.",
+                    "formula": r'''R_{\text{int}} = \sum_{i} w_i \cdot \text{RiskComponent}_i'''
+                },
+                "Ensemble Risk Score": {
+                    "description": "A blended score from foundational statistical models (e.g., historical patterns, Bayesian inference). It represents the stable, baseline risk for a zone.",
+                    "question": "What is the 'normal' or expected level of risk for this zone, given the current context (e.g., weather, day of week)?",
+                    "relevance": "Provides a robust and less volatile risk assessment, preventing overreaction to minor, transient events.",
+                    "formula": r'''R_{\text{ens}} = \sum_{k=1}^{K} w_k \cdot \text{normalize}(M_k)'''
+                },
+                "GNN Structural Risk": {
+                    "description": "A measure of a zone's intrinsic, long-term vulnerability based on its position and connectivity within the city's road and social networks.",
+                    "question": "Is this zone inherently dangerous or problematic, regardless of recent events?",
+                    "relevance": "Identifies chronically at-risk areas that may require long-term strategic intervention (e.g., community policing, infrastructure changes) beyond daily resource allocation.",
+                    "formula": r'''\text{PageRank}(z_i) = \frac{1-d}{N} + d \sum_{z_j \in N(z_i)} \frac{\text{PR}(z_j)}{|N(z_j)|}'''
+                },
+                "STGP Risk": {
+                    "description": "A score representing the risk radiating from recent, severe incidents. It models risk as a fluid that decays over space and time from a point source.",
+                    "question": "How much 'risk pressure' is a major incident in a neighboring zone putting on this one?",
+                    "relevance": "Captures the spatiotemporal correlation of risk, ensuring that proximity to danger is accounted for, even across arbitrary zone boundaries.",
+                    "formula": r'''f(s, t) \sim \mathcal{GP}(m(s, t), k((s, t), (s', t')))'''
+                },
+                "Game Theory Tension": {
+                    "description": "A metric that quantifies a zone's contribution to system-wide resource competition. It's high when a high-risk zone also has a high expected volume of incidents.",
+                    "question": "Which zones are causing the most strain and competition for our limited resources?",
+                    "relevance": "Identifies which zones are the primary drivers of system-wide strain, helping to prioritize areas where under-resourcing would have the most severe consequences.",
+                    "formula": r'''\text{Tension}_i = \text{Risk}_i \times \text{ExpectedIncidents}_i'''
+                },
+                "Chaos Sensitivity Score": {
+                    "description": "A measure of system-wide volatility and fragility, based on concepts from Chaos Theory. It does not predict a specific incident, but rather the system's unpredictability.",
+                    "question": "Is the city operating normally, or is it in a 'brittle' state where one small incident could cascade into a major crisis?",
+                    "relevance": "Acts as a critical 'instability alarm' for command staff. A high score warns that the entire system is volatile and prone to cascading failures.",
+                    "formula": r'''\lambda \approx \frac{1}{t} \ln \frac{\|\delta(t)\|}{\|\delta(0)\|}'''
+                },
+                "Anomaly Score": {
+                    "description": "Measures the 'strangeness' of the current incident pattern (spatial and typological) compared to the historical norm for this time and day.",
+                    "question": "Are we seeing unusual types of incidents or normal incidents in very unusual places?",
+                    "relevance": "Detects novel threats or coordinated activity that simple volume-based metrics would miss. A high score is a clear signal that 'today is not a normal day.'",
+                    "formula": r'''D_{KL}(P || Q) = \sum_{z} P(z) \log\frac{P(z)}{Q(z)}'''
+                },
+                "Resource Adequacy Index": {
+                    "description": "A system-wide ratio of available units to the total expected demand, penalized by factors like hospital strain and traffic.",
+                    "question": "As a whole, does my system have enough resources to handle the predicted demand for the next hour?",
+                    "relevance": "Provides a top-line metric for command staff to understand overall system capacity. A low score indicates the system is severely overstretched and may require calling in additional resources.",
+                    "formula": r'''\text{RAI} = \frac{\text{AvailableUnits}}{\sum E_i \times (1 + k_{\text{strain}})}'''
+                }
             }
-            for kpi, definition in kpi_defs.items():
-                st.markdown(f"**{kpi}:** {definition}")
+            
+            for kpi, content in kpi_defs.items():
+                st.markdown(f"**{kpi}**")
+                st.markdown(f"*{content['description']}*")
+                
+                cols = st.columns([1, 2])
+                with cols[0]:
+                    st.markdown("**Question it Answers:**")
+                    st.markdown(f"> {content['question']}")
+                    
+                    st.markdown("**Strategic Relevance:**")
+                    st.markdown(f"> {content['relevance']}")
+
+                with cols[1]:
+                    st.markdown("**Mathematical Formulation:**")
+                    st.latex(content['formula'])
+                
+                st.markdown("---")
 
     # --- SIDEBAR AND ACTIONS ---
     def _render_sidebar(self):
