@@ -421,13 +421,14 @@ class Dashboard:
         except Exception as e:
             logger.error(f"Error in systemic risk composition plot: {e}", exc_info=True)
             st.warning("Could not display Systemic Risk Composition plot.")
-    # --- SME Addition: New High-Value Plot 1 (Improved Version) ---
+   
+    # --- SME Addition: New High-Value Plot 1 (Commercial Grade) ---
     def _plot_allocation_opportunity(self, kpi_df: pd.DataFrame, allocations: Dict[str, int]):
         """
-        [SME VISUALIZATION] Plots an allocation opportunity matrix.
-        This identifies the most critical resource gaps by plotting total risk vs. uncovered risk.
+        [SME VISUALIZATION] Plots a Strategic Deployment Matrix.
+        This provides an immediate, actionable overview of resource allocation efficiency.
         """
-        st.markdown("**Analysis:** This matrix identifies the most critical resource gaps. Zones in the **top-right (Urgent Deficit)** are high-risk and highly under-resourced. Zones in the **top-left (Potential Surplus)** are lower-risk but may have units that could be redeployed to more critical areas. The size of the bubble indicates the expected incident volume, adding a third dimension of urgency.")
+        st.markdown("**Analysis:** This matrix identifies the most critical resource gaps and potential surpluses. It plots each zone based on its total risk and its current resource deficit. The goal is to move zones from the top-right quadrant (re-allocate **to** them) by using surplus units from the top-left quadrant (re-allocate **from** them).")
         try:
             df = kpi_df[['Zone', 'Integrated_Risk_Score', 'Expected Incident Volume']].copy()
             df['allocated_units'] = df['Zone'].map(allocations).fillna(0)
@@ -435,126 +436,172 @@ class Dashboard:
             df['risk_covered'] = df['allocated_units'] * risk_cov
             df['resource_deficit'] = df['Integrated_Risk_Score'] - df['risk_covered']
 
-            # Add Quadrant labels for better interpretation
             mean_risk = df['Integrated_Risk_Score'].mean()
-            mean_deficit = df['resource_deficit'].mean()
-            df['quadrant'] = '4. Adequately Covered'
-            df.loc[(df['Integrated_Risk_Score'] > mean_risk) & (df['resource_deficit'] > mean_deficit), 'quadrant'] = '1. Urgent Deficit'
-            df.loc[(df['Integrated_Risk_Score'] <= mean_risk) & (df['resource_deficit'] > mean_deficit), 'quadrant'] = '2. Potential Surplus'
-            df.loc[(df['Integrated_Risk_Score'] > mean_risk) & (df['resource_deficit'] <= mean_deficit), 'quadrant'] = '3. Stretched but Stable'
+            
+            fig = go.Figure()
 
-            fig = px.scatter(
-                df, x='Integrated_Risk_Score', y='resource_deficit',
-                size='Expected Incident Volume', color='quadrant',
-                hover_name='Zone', size_max=30,
-                color_discrete_map={
-                    '1. Urgent Deficit': '#D32F2F',
-                    '2. Potential Surplus': '#1E90FF',
-                    '3. Stretched but Stable': '#FBC02D',
-                    '4. Adequately Covered': '#388E3C'
-                },
-                labels={'Integrated_Risk_Score': 'Total Risk Score', 'resource_deficit': 'Resource Deficit (Uncovered Risk)', 'quadrant': 'Allocation Status'},
-                custom_data=['allocated_units']
-            )
+            # Background Quadrant Colors for intuitive interpretation
+            fig.add_shape(type="rect", xref="x", yref="y", x0=mean_risk, y0=0, x1=df['Integrated_Risk_Score'].max()*1.1, y1=df['resource_deficit'].max()*1.1, line=dict(width=0), fillcolor="rgba(211, 47, 47, 0.1)", layer="below")
+            fig.add_shape(type="rect", xref="x", yref="y", x0=0, y0=0, x1=mean_risk, y1=df['resource_deficit'].max()*1.1, line=dict(width=0), fillcolor="rgba(30, 136, 229, 0.1)", layer="below")
+            
+            # Scatter Plot
+            fig.add_trace(go.Scatter(
+                x=df['Integrated_Risk_Score'], y=df['resource_deficit'],
+                mode='markers+text',
+                marker=dict(
+                    size=df['Expected Incident Volume'],
+                    sizemode='area',
+                    sizeref=2.*max(df['Expected Incident Volume'])/(40.**2),
+                    sizemin=4,
+                    color=df['resource_deficit'],
+                    colorscale="OrRd",
+                    showscale=True,
+                    colorbar=dict(title="Resource Deficit")
+                ),
+                text=df['Zone'],
+                textposition="top center",
+                textfont=dict(size=9, color='#555'),
+                customdata=df[['allocated_units']],
+                hovertemplate="<b>%{text}</b><br>Total Risk: %{x:.3f}<br>Resource Deficit: %{y:.3f}<br>Units Allocated: %{customdata[0]}<extra></extra>"
+            ))
 
-            fig.update_traces(
-                hovertemplate="<b>Zone: %{hover_name}</b><br>Total Risk: %{x:.3f}<br>Resource Deficit: %{y:.3f}<br>Units Allocated: %{customdata[0]}<extra></extra>"
-            )
-
-            # Add quadrant lines and annotations
+            # Quadrant Lines and Annotations
             fig.add_vline(x=mean_risk, line_width=1, line_dash="dash", line_color="grey")
-            fig.add_hline(y=mean_deficit, line_width=1, line_dash="dash", line_color="grey")
+            fig.add_hline(y=0, line_width=2, line_color="black")
+            
+            anno_font = dict(family="sans-serif", size=12, color="white")
+            fig.add_annotation(x=df['Integrated_Risk_Score'].max(), y=df['resource_deficit'].max(), text="<b>URGENT DEFICIT</b><br>(High Risk, High Need)", showarrow=False, font=anno_font, bgcolor="rgba(211, 47, 47, 0.7)", xanchor='right', yanchor='top', pad=4)
+            fig.add_annotation(x=0, y=df['resource_deficit'].max(), text="<b>POTENTIAL SURPLUS</b><br>(Low Risk, High Need)", showarrow=False, font=anno_font, bgcolor="rgba(30, 136, 229, 0.7)", xanchor='left', yanchor='top', pad=4)
+            fig.add_annotation(x=df['Integrated_Risk_Score'].max(), y=0, text="<b>STABLE</b> (High Risk, Covered)", showarrow=False, font=dict(family="sans-serif", size=12, color="#555"), xanchor='right', yanchor='bottom', pad=4)
+
             fig.update_layout(
-                title="Allocation Opportunity Matrix", height=500,
-                xaxis_title="Zone Risk Profile", yaxis_title="Resource Need",
-                legend_title_text='Allocation Status'
+                title_text="Strategic Deployment Matrix",
+                xaxis_title="Zone Risk Profile →",
+                yaxis_title="← Resource Need →",
+                height=550,
+                plot_bgcolor='white',
+                showlegend=False,
+                xaxis=dict(gridcolor='#e5e5e5'),
+                yaxis=dict(gridcolor='#e5e5e5', zerolinecolor='black', zerolinewidth=2)
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             logger.error(f"Error in allocation opportunity plot: {e}", exc_info=True)
             st.warning("Could not display Allocation Opportunity plot.")
-
-    # --- SME Addition: New High-Value Plot 2 (Improved Version) ---
+            
+    # --- SME Addition: New High-Value Plot 2 (Commercial Grade) ---
     def _plot_risk_momentum(self, kpi_df: pd.DataFrame):
         """
-        [SME VISUALIZATION] Plots a diverging bar & dot plot to show risk trajectory.
-        This elegant design shows current magnitude and momentum simultaneously.
+        [SME VISUALIZATION] Plots a Threat Vector Analysis chart (comet chart).
+        This elegant design shows current magnitude, historical position, and trajectory.
         """
-        st.markdown("**Analysis:** This chart shows risk trajectory for the top zones. The **dot's position** shows the current risk score. The **bar's length and color** show the momentum over the last 6 hours. Red bars indicate escalating risk; blue bars indicate de-escalating risk. This immediately draws attention to zones that are both high-risk and rapidly getting worse.")
+        st.markdown("**Analysis:** This chart reveals the trajectory of risk for the top zones. The **large colored dot** is the current risk. The **small grey dot** is the risk 6 hours ago. The connecting line shows the path, or 'threat vector'. This immediately identifies which high-risk zones are also rapidly worsening.")
         try:
             top_zones_df = kpi_df.nlargest(10, 'Integrated_Risk_Score')
             risk_now = top_zones_df[['Zone', 'Integrated_Risk_Score']].set_index('Zone')
             # For demonstration, we simulate historical data.
             risk_6hr_ago = (risk_now * np.random.normal(1.0, 0.2, risk_now.shape)).clip(0, 1)
-            momentum_df = (risk_now - risk_6hr_ago).rename(columns={'Integrated_Risk_Score': 'Momentum'})
             
-            plot_data = risk_now.join(momentum_df).reset_index().sort_values('Integrated_Risk_Score', ascending=True)
-            plot_data['color'] = np.where(plot_data['Momentum'] < 0, '#1E90FF', '#D32F2F')
+            plot_data = risk_now.join(risk_6hr_ago.rename(columns={'Integrated_Risk_Score': 'Risk_6hr_ago'}))
+            plot_data = plot_data.sort_values('Integrated_Risk_Score', ascending=False).reset_index()
 
             fig = go.Figure()
-            # Add the momentum bars
-            fig.add_trace(go.Bar(
-                x=plot_data['Momentum'], y=plot_data['Zone'], orientation='h',
-                marker_color=plot_data['color'],
-                name='6-Hour Momentum',
-                hovertemplate="<b>Zone:</b> %{y}<br><b>Momentum:</b> %{x:+.3f}<extra></extra>"
-            ))
-            # Overlay the current risk score as a dot
-            fig.add_trace(go.Scatter(
-                x=plot_data['Integrated_Risk_Score'], y=plot_data['Zone'], mode='markers',
-                marker=dict(color='#2c3e50', size=12, symbol='diamond'),
-                name='Current Risk',
-                hovertemplate="<b>Zone:</b> %{y}<br><b>Current Risk:</b> %{x:.3f}<extra></extra>"
-            ))
             
+            # Add segments (comet tails) for each zone
+            for i, row in plot_data.iterrows():
+                fig.add_shape(type='line',
+                    x0=row['Risk_6hr_ago'], y0=row['Zone'],
+                    x1=row['Integrated_Risk_Score'], y1=row['Zone'],
+                    line=dict(color='lightgrey', width=2)
+                )
+
+            # Add historical points (small, grey)
+            fig.add_trace(go.Scatter(
+                x=plot_data['Risk_6hr_ago'], y=plot_data['Zone'],
+                mode='markers', marker=dict(color='grey', size=6),
+                name='6 Hrs Ago', hoverinfo='none'
+            ))
+
+            # Add current points (large, colored by momentum)
+            plot_data['momentum'] = plot_data['Integrated_Risk_Score'] - plot_data['Risk_6hr_ago']
+            fig.add_trace(go.Scatter(
+                x=plot_data['Integrated_Risk_Score'], y=plot_data['Zone'],
+                mode='markers',
+                marker=dict(
+                    color=plot_data['momentum'],
+                    colorscale='RdBu_r',
+                    cmin=-0.2, cmax=0.2,
+                    colorbar=dict(title='Momentum'),
+                    size=15,
+                    symbol='circle'
+                ),
+                name='Current Risk',
+                hovertemplate="<b>Zone:</b> %{y}<br><b>Current Risk:</b> %{x:.3f}<br><b>Momentum:</b> %{marker.color:+.3f}<extra></extra>"
+            ))
+
             fig.update_layout(
-                title="Risk Momentum for Top Zones",
-                xaxis_title="Risk Score & 6-Hour Change",
-                yaxis_title=None,
-                height=500,
-                barmode='overlay',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                plot_bgcolor='rgba(240,240,240,0.95)'
+                title="Threat Vector Analysis",
+                xaxis_title="Integrated Risk Score", yaxis_title=None,
+                height=550, plot_bgcolor='white', showlegend=False,
+                yaxis=dict(autorange="reversed"),
+                xaxis=dict(gridcolor='#e5e5e5')
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             logger.error(f"Error in risk momentum plot: {e}", exc_info=True)
             st.warning("Could not display Risk Momentum plot.")
 
-    # --- SME Addition: New High-Value Plot 3 (Improved Version) ---
+    # --- SME Addition: New High-Value Plot 3 (Commercial Grade) ---
     def _plot_critical_zone_anatomy(self, kpi_df: pd.DataFrame):
         """
-        [SME VISUALIZATION] Plots a 100% normalized stacked bar chart.
-        This dissects the *composition* of risk, making it easy to compare zone profiles.
+        [SME VISUALIZATION] Plots a detailed Risk Composition Profile.
+        This dissects the anatomy of risk for critical zones, guiding the type of response.
         """
-        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. Each bar is normalized to 100%, showing the proportional contribution of Violence, Accidents, or Medical surges to that zone's specific risk profile. This is crucial for dispatching the right *type* of support.")
+        st.markdown("**Analysis:** This chart dissects the *composition* of risk for the most critical zones. The length of the bar shows the total risk, while the colored segments show its anatomy (Violence, Accident, Medical). This helps commanders assign the right type of resources to the right problems.")
         try:
             risk_cols = ['Violence Clustering Score', 'Accident Clustering Score', 'Medical Surge Score']
             if not all(col in kpi_df.columns for col in risk_cols): st.error("Data missing for Zone Anatomy plot."); return
 
             df_top = kpi_df.nlargest(7, 'Integrated_Risk_Score').copy()
+            df_top['Total_Component_Risk'] = df_top[risk_cols].sum(axis=1)
             
-            # Normalize the risk components for each zone
-            df_top['total_component_risk'] = df_top[risk_cols].sum(axis=1)
-            for col in risk_cols:
-                df_top[col] = (df_top[col] / (df_top['total_component_risk'] + 1e-9)) * 100
+            # Sort by total integrated risk for a clear hierarchy
+            df_top = df_top.sort_values('Integrated_Risk_Score', ascending=True)
 
-            df_melt = df_top.melt(id_vars='Zone', value_vars=risk_cols, var_name='Risk_Type', value_name='Percentage')
-            df_melt['Risk_Type'] = df_melt['Risk_Type'].str.replace(' Clustering Score', '').str.replace(' Surge Score', '')
+            fig = go.Figure()
+            
+            colors = {'Violence': '#D32F2F', 'Accident': '#FBC02D', 'Medical': '#1E90FF'}
+            
+            for risk_type, color in colors.items():
+                col_name = f"{risk_type} Clustering Score" if risk_type != 'Medical' else 'Medical Surge Score'
+                fig.add_trace(go.Bar(
+                    y=df_top['Zone'],
+                    x=df_top[col_name],
+                    name=risk_type,
+                    orientation='h',
+                    marker=dict(color=color, line=dict(color='white', width=1))
+                ))
 
-            fig = px.bar(
-                df_melt, x='Percentage', y='Zone', color='Risk_Type',
-                orientation='h',
-                title='Risk Anatomy of Critical Zones',
-                labels={'Percentage': 'Percentage of Component Risk'},
-                category_orders={'Zone': df_top['Zone'].tolist()[::-1]}, # Reverse for top-to-bottom display
-                color_discrete_map={'Violence': '#D32F2F', 'Accident': '#FBC02D', 'Medical': '#1E90FF'},
-                text=df_melt['Percentage'].apply(lambda x: f'{x:.0f}%')
-            )
+            # Add annotations for the total Integrated Risk Score on the right
+            for i, row in df_top.iterrows():
+                fig.add_annotation(
+                    xref='paper', yref='y',
+                    x=1.01, y=row['Zone'],
+                    text=f"<b>{row['Integrated_Risk_Score']:.2f}</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='#333'),
+                    align="left"
+                )
+
             fig.update_layout(
-                barmode='stack', yaxis_title=None, height=500,
-                legend_title_text='Risk Driver',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                barmode='stack',
+                title='Risk Composition Profile of Critical Zones',
+                xaxis_title='Component Risk Score Contribution',
+                yaxis_title=None,
+                height=500,
+                plot_bgcolor='white',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(r=50) # Add margin for the annotations
             )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
