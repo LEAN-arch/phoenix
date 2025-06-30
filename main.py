@@ -326,24 +326,92 @@ class Dashboard:
             st.info("Advanced visualizations unavailable: Waiting for data...")
 
     def _plot_vulnerability_quadrant(self, kpi_df: pd.DataFrame):
-        st.markdown("**Analysis:** Segments zones by long-term **structural vulnerability** (e.g., road network centrality) vs. immediate **dynamic risk** (e.g., recent incidents, events).")
+        """
+        [SME VISUALIZATION] Plots a Strategic Risk Matrix.
+        This quadrant plot elegantly segments zones by their risk profile for high-level decision-making.
+        """
+        st.markdown("**Analysis:** This matrix segments zones by **structural vulnerability** vs. **dynamic risk**. The quadrants guide strategic focus: from immediate crisis response to long-term preventative action. Bubble size indicates expected incident volume, highlighting zones where high risk has the greatest potential impact on the population.")
         try:
             req = ['Ensemble Risk Score', 'GNN_Structural_Risk', 'Integrated_Risk_Score', 'Expected Incident Volume']
-            if not all(c in kpi_df.columns for c in req): st.error("Data missing for Vulnerability plot."); return
-            x_m, y_m = kpi_df['Ensemble Risk Score'].mean(), kpi_df['GNN_Structural_Risk'].mean()
-            fig = px.scatter(kpi_df, x="Ensemble Risk Score", y="GNN_Structural_Risk", color="Integrated_Risk_Score", size="Expected Incident Volume", hover_name="Zone", color_continuous_scale="reds", size_max=18, hover_data={'Zone':False, 'Ensemble Risk Score':':.3f', 'GNN_Structural_Risk':':.3f'})
-            fig.update_traces(hovertemplate="<b>Zone: %{hovertext}</b><br><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<extra></extra>")
-            fig.add_vline(x=x_m, line_width=1, line_dash="dash", line_color="grey"); fig.add_hline(y=y_m, line_width=1, line_dash="dash", line_color="grey")
-            base_anno = {'showarrow': False}
-            fig.add_annotation(x=x_m*1.5, y=y_m*1.8, text="<b>Crisis Zones</b>", font={'color':"red", 'size':12}, **base_anno)
-            fig.add_annotation(x=x_m*2, y=y_m*0.5, text="<b>Acute Hotspots</b>", font={'color':"darkorange", 'size':12}, **base_anno) # Adjusted position
-            fig.add_annotation(x=x_m*0.5, y=y_m*1.8, text="<b>Latent Threats</b>", font={'color':"navy", 'size':12}, **base_anno)
-            fig.update_layout(xaxis_title="Dynamic Risk (Real-time Threat)", yaxis_title="Structural Vulnerability (Intrinsic Threat)", coloraxis_colorbar_title_text='Integrated<br>Risk')
+            if not all(c in kpi_df.columns for c in req):
+                st.error("Data missing for Strategic Risk Matrix."); return
+
+            # Use 75th percentile for a more meaningful "high risk" threshold
+            x_threshold = kpi_df['Ensemble Risk Score'].quantile(0.75)
+            y_threshold = kpi_df['GNN_Structural_Risk'].quantile(0.75)
+            
+            fig = go.Figure()
+
+            # --- Add traces for each quadrant to control layering and hover behavior ---
+            quadrant_data = {
+                "Crisis": kpi_df[(kpi_df['Ensemble Risk Score'] >= x_threshold) & (kpi_df['GNN_Structural_Risk'] >= y_threshold)],
+                "Acute": kpi_df[(kpi_df['Ensemble Risk Score'] >= x_threshold) & (kpi_df['GNN_Structural_Risk'] < y_threshold)],
+                "Latent": kpi_df[(kpi_df['Ensemble Risk Score'] < x_threshold) & (kpi_df['GNN_Structural_Risk'] >= y_threshold)],
+                "Stable": kpi_df[(kpi_df['Ensemble Risk Score'] < x_threshold) & (kpi_df['GNN_Structural_Risk'] < y_threshold)]
+            }
+
+            colors = {"Crisis": "#B71C1C", "Acute": "#FBC02D", "Latent": "#1565C0", "Stable": "#558B2F"}
+            
+            for status, df_quad in quadrant_data.items():
+                if not df_quad.empty:
+                    fig.add_trace(go.Scatter(
+                        x=df_quad['Ensemble Risk Score'],
+                        y=df_quad['GNN_Structural_Risk'],
+                        mode='markers+text',
+                        marker=dict(
+                            size=df_quad['Expected Incident Volume'],
+                            sizemode='area',
+                            sizeref=2.*max(kpi_df['Expected Incident Volume'], 1)/(40.**2),
+                            sizemin=6,
+                            color=colors[status],
+                            line=dict(width=1, color='white'),
+                            opacity=0.8
+                        ),
+                        text=df_quad['Zone'] if status == "Crisis" else "", # Only label the most critical zones
+                        textposition="top center",
+                        textfont=dict(size=10, color=colors[status], family="Arial Black"),
+                        name=status,
+                        customdata=df_quad['Integrated_Risk_Score'],
+                        hovertemplate="<b>Zone: %{text}</b><br>Dynamic Risk: %{x:.3f}<br>Structural Risk: %{y:.3f}<br><b>Total Risk: %{customdata:.3f}</b><extra></extra>"
+                    ))
+
+            # --- Add quadrant lines and annotations with a clean, modern aesthetic ---
+            fig.add_vline(x=x_threshold, line_width=1, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
+            fig.add_hline(y=y_threshold, line_width=1, line_dash="longdash", line_color="rgba(0,0,0,0.2)")
+
+            anno_defaults = dict(xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="rgba(0,0,0,0.4)"))
+            fig.add_annotation(x=1, y=1, text="<b>CRISIS ZONES</b><br>High Dynamic, High Structural", xanchor='right', yanchor='top', align='right', **anno_defaults)
+            fig.add_annotation(x=1, y=0, text="<b>ACUTE HOTSPOTS</b><br>High Dynamic, Low Structural", xanchor='right', yanchor='bottom', align='right', **anno_defaults)
+            fig.add_annotation(x=0, y=1, text="<b>LATENT THREATS</b><br>Low Dynamic, High Structural", xanchor='left', yanchor='top', align='left', **anno_defaults)
+            fig.add_annotation(x=0, y=0, text="STABLE ZONES", xanchor='left', yanchor='bottom', align='left', **anno_defaults)
+
+            # --- Final Layout Polish for a professional, "mission control" feel ---
+            fig.update_layout(
+                title_text="<b>Strategic Risk Matrix</b>",
+                title_x=0.5,
+                title_font=dict(size=20, family="Arial, sans-serif"),
+                xaxis_title="Dynamic Risk (Real-time Threat) →",
+                yaxis_title="Structural Vulnerability (Intrinsic Threat) →",
+                height=550,
+                plot_bgcolor='rgba(248, 248, 252, 1)',
+                paper_bgcolor='white',
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom", y=1.02,
+                    xanchor="right", x=1,
+                    title=None,
+                    font=dict(size=12)
+                ),
+                xaxis=dict(gridcolor='rgba(0,0,0,0.1)', zeroline=False, range=[0, kpi_df['Ensemble Risk Score'].max() * 1.1]),
+                yaxis=dict(gridcolor='rgba(0,0,0,0.1)', zeroline=False, range=[0, kpi_df['GNN_Structural_Risk'].max() * 1.1]),
+                margin=dict(l=80, r=40, t=100, b=80)
+            )
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            logger.error(f"Error in vulnerability quadrant: {e}", exc_info=True)
-            st.warning("Could not display Vulnerability Quadrant plot.")
-
+            logger.error(f"Error in vulnerability quadrant plot: {e}", exc_info=True)
+            st.warning("Could not display Strategic Risk Matrix.")
+            
     # --- SME Addition: New High-Value Plot 1 ---
     def _plot_risk_fingerprints(self, kpi_df: pd.DataFrame):
         """
