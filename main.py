@@ -76,24 +76,17 @@ class EnvFactorsWithTolerance(EnvFactors):
     This prevents unnecessary Streamlit reruns from minor floating-point noise.
     """
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, EnvFactors):
-            return NotImplemented
-
+        if not isinstance(other, EnvFactors): return NotImplemented
         for attr in ['traffic_level', 'air_quality_index', 'hospital_divert_status']:
-            if abs(getattr(self, attr, 0) - getattr(other, attr, 0)) > CONSTANTS['FLOAT_TOLERANCE']:
-                return False
-        for attr in ['is_holiday', 'weather', 'major_event', 'heatwave_alert',
-                     'day_type', 'time_of_day', 'public_event_type',
-                     'police_activity', 'school_in_session']:
-            if getattr(self, attr, None) != getattr(other, attr, None):
-                return False
+            if abs(getattr(self, attr, 0) - getattr(other, attr, 0)) > CONSTANTS['FLOAT_TOLERANCE']: return False
+        for attr in ['is_holiday', 'weather', 'major_event', 'heatwave_alert', 'day_type', 'time_of_day', 'public_event_type','police_activity', 'school_in_session']:
+            if getattr(self, attr, None) != getattr(other, attr, None): return False  
         return True
 
 
 # --- Main Dashboard Class ---
 class Dashboard:
     """Handles the rendering of the Streamlit user interface for Phoenix v4.0."""
-
     def __init__(self, dm: DataManager, engine: PredictiveAnalyticsEngine):
         self.dm = dm
         self.engine = engine
